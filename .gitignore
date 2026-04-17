@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Environnements virtuels
+venv/
+.venv/
+env/
+
+# Django / Flask
+*.log
+db.sqlite3
+instance/
+
+# ⚠️ SÉCURITÉ — ne jamais commiter ces fichiers
+.env
+.env.*
+*.pem
+*.key
+secrets.yml
+# Kubernetes secrets avec valeurs réelles (utiliser secret.yaml comme template vide)
+k8s/secret-values.yaml
+k8s/*-secret-filled.yaml
+
+# Rapports de sécurité générés par le CI
+bandit-report.json
+pip-audit-report.json
+scout-report.sarif
+coverage.xml
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
