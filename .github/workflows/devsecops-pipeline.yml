@@ -190,7 +190,7 @@ jobs:
       # FIXED WINDOWS VERSION
       # =========================
       - name: Set kubeconfig
-        shell: pwsh
+        shell: powershell
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
         run: |
