@@ -10,6 +10,8 @@ env:
   IMAGE_NAME: wassimoz/devsecops-project
 
 jobs:
+
+
   sast-scan:
     name: "Secrets & Static Analysis"
     runs-on: ubuntu-latest
@@ -20,45 +22,34 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Gitleaks — detect secrets in git history
+      - name: Gitleaks — detect secrets
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Python 3.11
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install security tools
+      - name: Install tools
         run: pip install bandit safety pytest
 
-      - name: Bandit — static code analysis
-        run: |
-          bandit -r app/ \
-            -f json \
-            -o bandit-report.json \
-            -ll \
-            --exclude app/tests
-          echo "Bandit scan complete"
+      - name: Bandit scan
+        run: bandit -r app/ -f json -o bandit-report.json -ll --exclude app/tests
 
-      - name: Safety CLI — check known CVEs in dependencies
-        run: |
-          safety check -r app/requirements.txt --json > safety-report.json || true
-          echo "Safety scan complete"
+      - name: Safety scan
+        run: safety check -r app/requirements.txt --json > safety-report.json || true
 
       - name: Install dependencies
-        run: |
-          pip install -r app/requirements.txt
-          pip install pytest pytest-cov
+        run: pip install -r app/requirements.txt pytest pytest-cov
 
-      - name: Run unit tests
+      - name: Run tests
         run: |
           cd app
           pytest tests/ -v --junitxml=test-results.xml
-          echo "Tests completed"
 
-      - name: Upload SAST reports as artifacts
+      - name: Upload reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -67,55 +58,51 @@ jobs:
             bandit-report.json
             safety-report.json
             app/test-results.xml
-          retention-days: 14
+
 
   build-scan:
     name: "Build & Container Security"
     runs-on: ubuntu-latest
     needs: sast-scan
-    permissions:
-      contents: read
-      security-events: write
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Log in to Docker Hub
+      - name: Docker login
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.REPO_USER }}
           password: ${{ secrets.PWD }}
 
-      - name: Build Docker image
+      - name: Build image
         run: |
           docker build \
             -t ${{ env.IMAGE_NAME }}:${{ github.sha }} \
             -t ${{ env.IMAGE_NAME }}:latest \
             ./app
 
-      - name: Trivy — scan container for vulnerabilities
+      - name: Trivy scan
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          scan-type: "image"
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"
           exit-code: "0"
           ignore-unfixed: true
 
-      - name: Upload Trivy results to GitHub Security tab
+      - name: Upload Trivy results
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: trivy-results.sarif
 
-      - name: Push image to Docker Hub
+      - name: Push image
         if: github.event_name == 'push'
         run: |
           docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
           docker push ${{ env.IMAGE_NAME }}:latest
+
 
   dast-scan:
     name: "DAST — OWASP ZAP"
@@ -123,51 +110,42 @@ jobs:
     needs: build-scan
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Log in to Docker Hub
+      - name: Docker login
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.REPO_USER }}
           password: ${{ secrets.PWD }}
 
-      - name: Start application container
+      - name: Run app
         run: |
-          docker run -d \
-            --name test-app \
-            -p 5000:5000 \
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker run -d --name test-app -p 5000:5000 ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
-      - name: Wait for app to be healthy
+      - name: Wait app
         run: |
-          echo "Waiting for app to start..."
           for i in {1..30}; do
-            if curl -sf http://localhost:5000/health; then
-              echo "App is ready"
-              break
-            fi
-            echo "Attempt $i failed, retrying in 3s..."
+            if curl -sf http://localhost:5000/health; then exit 0; fi
             sleep 3
           done
+          exit 1
 
-      - name: OWASP ZAP — baseline scan
+      - name: ZAP scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: "http://localhost:5000"
-          cmd_options: "-I"
 
-      - name: Upload ZAP report
+      - name: Upload report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: zap-report
           path: report_html.html
-          retention-days: 14
 
-      - name: Stop and remove test container
+      - name: Cleanup
         if: always()
-        run: docker stop test-app && docker rm test-app
+        run: docker rm -f test-app
+
 
   deploy-k8s:
     name: "Deploy — Kubernetes"
@@ -179,58 +157,60 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure kubectl
+      - name: Setup kubectl
         uses: azure/setup-kubectl@v3
         with:
           version: "latest"
 
       - name: Set kubeconfig
+        shell: pwsh
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
         run: |
-          if [ -z "${KUBECONFIG_B64}" ]; then
-            echo "::error::Secret KUBECONFIG_B64 is not set."
-            echo "Go to: Settings > Secrets > Actions > New repository secret"
-            echo "Name:  KUBECONFIG_B64"
-            echo "Value: run this on your local machine:"
-            echo "       cat ~/.kube/config | base64 -w 0"
+          if (-not $env:KUBECONFIG_B64) {
+            Write-Error "KUBECONFIG_B64 is missing"
             exit 1
-          fi
-          mkdir -p $HOME/.kube
-          echo "${KUBECONFIG_B64}" | base64 -d > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
-          echo "kubeconfig written ($(wc -l < $HOME/.kube/config) lines)"
+          }
 
-      - name: Verify cluster connection
+          $kubePath = "$HOME\.kube"
+          New-Item -ItemType Directory -Force -Path $kubePath | Out-Null
+
+          [IO.File]::WriteAllBytes(
+            "$kubePath\config",
+            [Convert]::FromBase64String($env:KUBECONFIG_B64)
+          )
+
+          Write-Host "kubeconfig configured successfully"
+
+      - name: Verify cluster
         run: |
           kubectl cluster-info
           kubectl get nodes
 
-      - name: Apply Kubernetes manifests
+      - name: Apply manifests
         run: |
-          kubectl apply -f k8s/namespace.yaml  --validate=false
-          kubectl apply -f k8s/deployment.yaml --validate=false
-          kubectl apply -f k8s/service.yaml    --validate=false
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
 
-      - name: Inject secret from GitHub Secrets
+      - name: Create secret
         run: |
-          kubectl create secret generic devsecops-secret \
-            --from-literal=secret-key="${{ secrets.APP_SECRET_KEY }}" \
-            --namespace=devsecops \
+          kubectl create secret generic devsecops-secret `
+            --from-literal=secret-key="${{ secrets.APP_SECRET_KEY }}" `
+            --namespace=devsecops `
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Update image tag
+      - name: Update image
         run: |
-          kubectl set image deployment/devsecops-app \
-            devsecops-app=${{ env.IMAGE_NAME }}:${{ github.sha }} \
+          kubectl set image deployment/devsecops-app `
+            devsecops-app=${{ env.IMAGE_NAME }}:${{ github.sha }} `
             -n devsecops
 
-      - name: Wait for rollout
+      - name: Rollout status
         run: |
-          kubectl rollout status deployment/devsecops-app \
-            -n devsecops --timeout=120s
+          kubectl rollout status deployment/devsecops-app -n devsecops
 
-      - name: Verify deployment
+      - name: Verify
         run: |
           kubectl get pods -n devsecops
           kubectl get svc -n devsecops
