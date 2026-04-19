@@ -26,6 +26,26 @@
       <div style="font-size:13px;font-weight:600;margin-top:6px;">Kubernetes</div>
       <div style="font-size:12px;color:#6b7280;">Deploy &amp; Orchestration</div>
     </div>
+    <div style="background:#fef2f2;border-radius:10px;padding:18px;border:1px solid #fecaca;">
+      <div style="font-size:22px;color:#dc2626;font-weight:700;">&#128737;</div>
+      <div style="font-size:13px;font-weight:600;margin-top:6px;">Wazuh SIEM</div>
+      <div style="font-size:12px;color:#6b7280;">Logs &amp; Alertes sécurité</div>
+    </div>
+    <div style="background:#f0fdf4;border-radius:10px;padding:18px;border:1px solid #bbf7d0;">
+      <div style="font-size:22px;color:#16a34a;font-weight:700;">&#128269;</div>
+      <div style="font-size:13px;font-weight:600;margin-top:6px;">Falco</div>
+      <div style="font-size:12px;color:#6b7280;">Détection intrusion K8s</div>
+    </div>
+    <div style="background:#eff6ff;border-radius:10px;padding:18px;border:1px solid #bfdbfe;">
+      <div style="font-size:22px;color:#2563eb;font-weight:700;">&#128202;</div>
+      <div style="font-size:13px;font-weight:600;margin-top:6px;">Prometheus</div>
+      <div style="font-size:12px;color:#6b7280;">Métriques &amp; Monitoring</div>
+    </div>
+    <div style="background:#fdf4ff;border-radius:10px;padding:18px;border:1px solid #e9d5ff;">
+      <div style="font-size:22px;color:#9333ea;font-weight:700;">&#128200;</div>
+      <div style="font-size:13px;font-weight:600;margin-top:6px;">Grafana</div>
+      <div style="font-size:12px;color:#6b7280;">Dashboard visualisation</div>
+    </div>
   </div>
 
   <h2 style="margin-top:28px;">Kubernetes — Manifests</h2>
@@ -56,12 +76,40 @@
       <tr style="border-bottom:1px solid #f3f4f6;">
         <td style="padding:10px 12px;font-family:monospace;">k8s/secret.yaml</td>
         <td style="padding:10px 12px;"><span class="badge" style="background:#fef9c3;color:#854d0e;">Secret</span></td>
-        <td style="padding:10px 12px;color:#6b7280;">SECRET_KEY injecté depuis un Secret K8s</td>
+        <td style="padding:10px 12px;color:#6b7280;">SECRET_KEY injecté depuis GitHub Secrets</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 style="margin-top:28px;">SOC — Security Operations Center</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px;">
+    <thead>
+      <tr style="background:#f9fafb;border-bottom:1px solid #e5e7eb;">
+        <th style="text-align:left;padding:10px 12px;">Outil</th>
+        <th style="text-align:left;padding:10px 12px;">Rôle</th>
+        <th style="text-align:left;padding:10px 12px;">Accès</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom:1px solid #f3f4f6;">
+        <td style="padding:10px 12px;font-family:monospace;">Wazuh</td>
+        <td style="padding:10px 12px;color:#6b7280;">SIEM — centralisation logs &amp; alertes CVE</td>
+        <td style="padding:10px 12px;"><span class="badge badge-gray">https://localhost:443</span></td>
+      </tr>
+      <tr style="border-bottom:1px solid #f3f4f6;">
+        <td style="padding:10px 12px;font-family:monospace;">Falco</td>
+        <td style="padding:10px 12px;color:#6b7280;">Détection intrusion runtime Kubernetes</td>
+        <td style="padding:10px 12px;"><span class="badge badge-gray">DaemonSet K8s</span></td>
+      </tr>
+      <tr style="border-bottom:1px solid #f3f4f6;">
+        <td style="padding:10px 12px;font-family:monospace;">Prometheus</td>
+        <td style="padding:10px 12px;color:#6b7280;">Collecte métriques app &amp; cluster</td>
+        <td style="padding:10px 12px;"><span class="badge badge-blue">:30090</span></td>
       </tr>
       <tr>
-        <td style="padding:10px 12px;font-family:monospace;">k8s/ingress.yaml</td>
-        <td style="padding:10px 12px;"><span class="badge badge-gray">Ingress</span></td>
-        <td style="padding:10px 12px;color:#6b7280;">Nginx Ingress — routing HTTP externe</td>
+        <td style="padding:10px 12px;font-family:monospace;">Grafana</td>
+        <td style="padding:10px 12px;color:#6b7280;">Dashboard visualisation sécurité</td>
+        <td style="padding:10px 12px;"><span class="badge badge-green">:30030</span></td>
       </tr>
     </tbody>
   </table>
