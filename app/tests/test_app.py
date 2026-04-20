@@ -27,7 +27,7 @@ class TestHealth:
         assert res.status_code != 302
 
 
-# ─── Page d'accueil ──────────────────────────────────────────────────────────
+
 
 class TestHome:
 
@@ -48,7 +48,7 @@ class TestHome:
         assert res.status_code != 500
 
 
-# ─── Login ───────────────────────────────────────────────────────────────────
+
 
 class TestLogin:
 
@@ -98,7 +98,7 @@ class TestLogin:
         assert res.status_code in [200, 400]
 
 
-# ─── Dashboard (protégé) ─────────────────────────────────────────────────────
+
 
 class TestDashboard:
 
@@ -121,7 +121,6 @@ class TestDashboard:
         assert res.status_code != 500
 
 
-# ─── Logout ──────────────────────────────────────────────────────────────────
 
 class TestLogout:
 
@@ -143,7 +142,7 @@ class TestLogout:
         assert "login" in res.headers["Location"]
 
 
-# ─── API REST ────────────────────────────────────────────────────────────────
+
 
 class TestAPI:
 
@@ -172,7 +171,7 @@ class TestAPI:
         assert data["logged_in"] is True
 
 
-# ─── Sécurité ────────────────────────────────────────────────────────────────
+
 
 class TestSecurity:
 
