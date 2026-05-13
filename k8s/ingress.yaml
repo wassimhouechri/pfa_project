@@ -8,7 +8,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: devsecops.local   # Replace with your real domain
+    - host: devsecops.local
       http:
         paths:
           - path: /

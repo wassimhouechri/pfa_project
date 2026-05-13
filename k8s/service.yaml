@@ -6,7 +6,7 @@ metadata:
   labels:
     app: devsecops-app
 spec:
-  type: NodePort  # ← Changement clé
+  type: NodePort
   selector:
     app: devsecops-app
   ports:
