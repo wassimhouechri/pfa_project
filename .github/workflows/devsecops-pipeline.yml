@@ -184,7 +184,7 @@ jobs:
         run: docker stop test-app && docker rm test-app
 
   deploy-k8s:
-    name: "Deploy — Kubernetes with KIND"
+    name: "Deploy — Kubernetes Production"
     runs-on: ubuntu-latest
     needs: dast-scan
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -198,7 +198,6 @@ jobs:
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
-          kind version
 
       - name: Install kubectl
         uses: azure/setup-kubectl@v3
@@ -211,93 +210,98 @@ jobs:
           username: ${{ secrets.REPO_USER }}
           password: ${{ secrets.PWD }}
 
-      - name: Pull Docker image from Docker Hub
+      - name: Pull Docker image
         run: |
           docker pull ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          docker pull ${{ env.IMAGE_NAME }}:latest
+          docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} ${{ env.IMAGE_NAME }}:prod
 
-      - name: Create KIND cluster
+      - name: Create Production Cluster
         run: |
-          cat <<EOF | kind create cluster --name=devsecops-cluster --config=-
+          cat <<EOF | kind create cluster --name=devsecops-prod --config=-
           kind: Cluster
           apiVersion: kind.x-k8s.io/v1alpha4
           nodes:
           - role: control-plane
           - role: worker
           - role: worker
+          - role: worker
+          networking:
+            podSubnet: "10.244.0.0/16"
+            serviceSubnet: "10.96.0.0/12"
           EOF
 
-      - name: Verify cluster
+      - name: Load Images
         run: |
-          kubectl cluster-info
-          kubectl get nodes
+          kind load docker-image ${{ env.IMAGE_NAME }}:${{ github.sha }} --name devsecops-prod
+          kind load docker-image ${{ env.IMAGE_NAME }}:prod --name devsecops-prod
 
-      - name: Load Docker image into KIND
+      - name: Deploy Infrastructure
         run: |
-          kind load docker-image ${{ env.IMAGE_NAME }}:${{ github.sha }} --name devsecops-cluster
-          kind load docker-image ${{ env.IMAGE_NAME }}:latest --name devsecops-cluster
-
-      - name: Apply Kubernetes manifests
-        run: |
-          kubectl apply -f k8s/namespace.yml
+          # Namespace
+          kubectl create namespace devsecops --dry-run=client -o yaml | kubectl apply -f -
+          
+          # ConfigMap
+          kubectl apply -f k8s/configmap.yml
+          
+          # Secret
           kubectl apply -f k8s/secret.yml
-          kubectl apply -f k8s/deployment.yml
+          
+          # Deployment
+          envsubst < k8s/deployment.yml | kubectl apply -f -
+          
+          # Service
           kubectl apply -f k8s/service.yml
-          kubectl apply -f k8s/ingress.yml || echo "Ingress skipped"
-
-      - name: Update image to latest
-        run: |
-          kubectl set image deployment/devsecops-app \
-            devsecops-app=${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            -n devsecops
-
-      - name: Debug - Check pod status
-        run: |
-          echo "=== Tous les pods ==="
-          kubectl get pods -n devsecops -o wide
           
-          echo "=== Events ==="
-          kubectl get events -n devsecops --sort-by='.lastTimestamp'
+          # HPA
+          kubectl apply -f k8s/hpa.yml
           
-          echo "=== Description des pods ==="
-          kubectl describe pods -n devsecops
+          # Network Policy
+          kubectl apply -f k8s/networkpolicy.yml
+
+      - name: Wait for Ready
+        run: |
+          kubectl wait --for=condition=available --timeout=300s deployment/devsecops-app -n devsecops
+          kubectl wait --for=condition=ready --timeout=300s pods --all -n devsecops
+
+      - name: Verify Deployment
+        run: |
+          echo "=== Status ==="
+          kubectl get all -n devsecops
+          kubectl get hpa -n devsecops
+          kubectl get networkpolicies -n devsecops
           
-          echo "=== Logs des pods ==="
-          for pod in $(kubectl get pods -n devsecops -o name); do
-            echo "--- Logs for $pod ---"
-            kubectl logs -n devsecops $pod || echo "No logs yet"
-          done
-
-      - name: Wait for rollout
-        run: |
-          kubectl rollout status deployment/devsecops-app -n devsecops --timeout=300s
-
-      - name: Get deployment status
-        run: |
-          echo "=== Pods ==="
-          kubectl get pods -n devsecops -o wide
-          echo "=== Services ==="
-          kubectl get svc -n devsecops
-          echo "=== Deployments ==="
-          kubectl get deployments -n devsecops
-
-      - name: Test application in KIND
-        run: |
-          sleep 10
+          echo "=== Pods Details ==="
+          kubectl top pods -n devsecops || echo "Metrics not available"
           
+          echo "=== Service Endpoints ==="
+          kubectl get endpoints -n devsecops
+
+      - name: Integration Test
+        run: |
           kubectl port-forward -n devsecops service/devsecops-app-service 5000:80 &
-          sleep 5
+          sleep 15
           
-          if curl -f http://localhost:5000/health; then
-            echo "✅ Health check passed"
-          else
-            echo "⚠️ Health check failed"
-          fi
+          echo "=== Testing Application ==="
+          curl -f http://localhost:5000/health || exit 1
+          curl -f http://localhost:5000/api/status || exit 1
           
-          if curl -f http://localhost:5000/api/status; then
-            echo "✅ API status check passed"
-          else
-            echo "⚠️ API status check failed"
-          fi
+          echo "=== Performance Test ==="
+          ab -n 100 -c 10 http://localhost:5000/health || echo "ab not installed"
           
-          echo "✅ Application deployed successfully in KIND!"
+          echo "✅ Production Deployment Successful!"
+
+      - name: Collect Artifacts
+        if: always()
+        run: |
+          mkdir -p k8s-artifacts
+          kubectl describe pods -n devsecops > k8s-artifacts/pods-describe.txt
+          kubectl logs -n devsecops --all-containers --prefix --tail=100 > k8s-artifacts/logs.txt
+          kubectl get all -n devsecops -o yaml > k8s-artifacts/all-resources.yaml
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k8s-deployment-artifacts
+          path: k8s-artifacts/
+          retention-days: 14
