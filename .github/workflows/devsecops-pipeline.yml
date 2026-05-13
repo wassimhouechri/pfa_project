@@ -1,4 +1,4 @@
-name: "DevSecOps CI/CD04"
+name: "DevSecOps CI/CD Pipeline"
 
 on:
   push:
@@ -104,7 +104,7 @@ jobs:
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"
-          exit-code: "0"  # Mis à 0 pour ne pas bloquer pendant les tests
+          exit-code: "0"
           ignore-unfixed: true
 
       - name: Upload Trivy results to GitHub Security tab
@@ -152,13 +152,12 @@ jobs:
             echo "Attempt $i failed, retrying in 3s..."
             sleep 3
           done
+
       - name: Get container IP and run ZAP
         run: |
-          # Récupérer l'IP du conteneur
           CONTAINER_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' test-app)
           echo "Container IP: $CONTAINER_IP"
           
-          # Lancer ZAP directement avec docker run
           docker run --rm \
             -v $(pwd):/zap/wrk/:rw \
             ghcr.io/zaproxy/zaproxy:stable \
@@ -240,13 +239,8 @@ jobs:
 
       - name: Apply Kubernetes manifests
         run: |
-          # Créer le namespace
           kubectl apply -f k8s/namespace.yml
-          
-          # Appliquer le secret
           kubectl apply -f k8s/secret.yml
-          
-          # Déployer l'application
           kubectl apply -f k8s/deployment.yml
           kubectl apply -f k8s/service.yml
           kubectl apply -f k8s/ingress.yml || echo "Ingress skipped"
@@ -256,6 +250,23 @@ jobs:
           kubectl set image deployment/devsecops-app \
             devsecops-app=${{ env.IMAGE_NAME }}:${{ github.sha }} \
             -n devsecops
+
+      - name: Debug - Check pod status
+        run: |
+          echo "=== Tous les pods ==="
+          kubectl get pods -n devsecops -o wide
+          
+          echo "=== Events ==="
+          kubectl get events -n devsecops --sort-by='.lastTimestamp'
+          
+          echo "=== Description des pods ==="
+          kubectl describe pods -n devsecops
+          
+          echo "=== Logs des pods ==="
+          for pod in $(kubectl get pods -n devsecops -o name); do
+            echo "--- Logs for $pod ---"
+            kubectl logs -n devsecops $pod || echo "No logs yet"
+          done
 
       - name: Wait for rollout
         run: |
@@ -272,14 +283,11 @@ jobs:
 
       - name: Test application in KIND
         run: |
-          # Attendre que les pods soient prêts
           sleep 10
           
-          # Forward le port
           kubectl port-forward -n devsecops service/devsecops-app-service 5000:80 &
           sleep 5
           
-          # Tester l'application
           if curl -f http://localhost:5000/health; then
             echo "✅ Health check passed"
           else
