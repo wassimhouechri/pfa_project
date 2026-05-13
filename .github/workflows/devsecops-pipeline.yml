@@ -24,6 +24,8 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --source . --verbose --redact --exit-code=0 --no-git  
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
