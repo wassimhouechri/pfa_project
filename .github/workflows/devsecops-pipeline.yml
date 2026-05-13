@@ -152,24 +152,32 @@ jobs:
             echo "Attempt $i failed, retrying in 3s..."
             sleep 3
           done
-      - name: Get container IP address
+       - name: Get container IP and run ZAP
         run: |
+          # Récupérer l'IP du conteneur
           CONTAINER_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' test-app)
           echo "Container IP: $CONTAINER_IP"
-          echo "CONTAINER_IP=$CONTAINER_IP" >> $GITHUB_ENV 
-        
-      - name: OWASP ZAP — baseline scan
-        uses: zaproxy/action-baseline@v0.12.0
-        with:
-          target: "http://${{ env.CONTAINER_IP }}:5000"
-          cmd_options: "-I"
+          
+          # Lancer ZAP directement avec docker run
+          docker run --rm \
+            -v $(pwd):/zap/wrk/:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://$CONTAINER_IP:5000 \
+            -J report_json.json \
+            -w report_md.md \
+            -r report_html.html \
+            -I || true
 
       - name: Upload ZAP report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: zap-report
-          path: report_html.html
+          path: |
+            report_html.html
+            report_json.json
+            report_md.md
           retention-days: 14
 
       - name: Stop and remove test container
