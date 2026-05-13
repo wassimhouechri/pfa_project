@@ -152,7 +152,7 @@ jobs:
             echo "Attempt $i failed, retrying in 3s..."
             sleep 3
           done
-       - name: Get container IP and run ZAP
+      - name: Get container IP and run ZAP
         run: |
           # Récupérer l'IP du conteneur
           CONTAINER_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' test-app)
