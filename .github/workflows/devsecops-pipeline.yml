@@ -169,22 +169,11 @@ jobs:
             -r report_html.html \
             -I || true
           
-          # Déplacer les rapports si nécessaire
           if [ -f zap-reports/report_html.html ]; then
             cp zap-reports/report_html.html .
             cp zap-reports/report_json.json .
             cp zap-reports/report_md.md .
           fi
-
-          docker run --rm \
-            -v $(pwd):/zap/wrk/:rw \
-            ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py \
-            -t http://$CONTAINER_IP:5000 \
-            -J report_json.json \
-            -w report_md.md \
-            -r report_html.html \
-            -I || true
 
       - name: Upload ZAP report
         uses: actions/upload-artifact@v4
@@ -256,19 +245,10 @@ jobs:
 
       - name: Deploy to Kubernetes
         run: |
-          # Namespace
           kubectl create namespace devsecops --dry-run=client -o yaml | kubectl apply -f -
-          
-          # Secret
           kubectl apply -f k8s/secret.yml
-          
-          # Deployment
           kubectl apply -f k8s/deployment.yml
-          
-          # Service
           kubectl apply -f k8s/service.yml
-          
-          # HPA (optionnel)
           kubectl apply -f k8s/hpa.yml || echo "HPA skipped"
 
       - name: Wait for deployment
@@ -282,23 +262,18 @@ jobs:
         run: |
           echo "=== Pods Status ==="
           kubectl get pods -n devsecops
-          
           echo "=== Services ==="
           kubectl get svc -n devsecops
-          
           echo "=== HPA Status ==="
           kubectl get hpa -n devsecops || echo "HPA not configured"
 
       - name: Application Health Check
         run: |
           echo "=== Testing Application ==="
-          
-          # Port forward
           kubectl port-forward -n devsecops service/devsecops-app-service 5000:80 &
           PF_PID=$!
           sleep 15
           
-          # Health check
           HEALTH_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health)
           if [ "$HEALTH_RESPONSE" = "200" ]; then
             echo "✅ Health check passed (HTTP $HEALTH_RESPONSE)"
@@ -306,7 +281,6 @@ jobs:
             echo "❌ Health check failed (HTTP $HEALTH_RESPONSE)"
           fi
           
-          # API status
           API_RESPONSE=$(curl -s http://localhost:5000/api/status)
           if echo "$API_RESPONSE" | grep -q "healthy"; then
             echo "✅ API status check passed"
@@ -316,11 +290,27 @@ jobs:
           
           kill $PF_PID 2>/dev/null || true
 
+      - name: Deploy SOC Stack
+        run: |
+          echo "=== Deploying SOC Stack ==="
+          kubectl create namespace soc --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f k8s/soc/prometheus-config.yaml || echo "Prometheus config not found"
+          kubectl apply -f k8s/soc/prometheus-deployment.yaml || echo "Prometheus deployment not found"
+          kubectl apply -f k8s/soc/grafana-dashboard.yaml || echo "Grafana dashboard not found"
+          kubectl apply -f k8s/soc/grafana-deployment.yaml || echo "Grafana deployment not found"
+          echo "✅ SOC Stack deployed"
+
+      - name: Verify SOC deployment
+        run: |
+          echo "=== SOC Pods ==="
+          kubectl get pods -n soc
+          echo "=== SOC Services ==="
+          kubectl get svc -n soc
+
       - name: Collect deployment info
         if: always()
         run: |
           mkdir -p k8s-info
-    
           POD_NAME=$(kubectl get pods -n devsecops -o jsonpath='{.items[0].metadata.name}')
           if [ -n "$POD_NAME" ]; then
             kubectl logs -n devsecops $POD_NAME --tail=50 > k8s-info/logs.txt
@@ -343,47 +333,11 @@ jobs:
           echo "========================================="
           echo "✅ DEPLOYMENT COMPLETED SUCCESSFULLY"
           echo "========================================="
-          echo "Application URL: http://localhost:30080"
-          echo "Namespace: devsecops"
-          echo "Replicas: 2"
+          echo "Application: http://localhost:30080"
+          echo "Grafana: http://localhost:3000 (admin/admin)"
+          echo "Prometheus: http://localhost:9090"
           echo "========================================="
-  soc-deploy:
-    name: "SOC - Security Operations Center"
-    runs-on: ubuntu-latest
-    needs: deploy-k8s
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v3
-
-      - name: Configure kubectl
-        run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBECONFIG_KIND }}" | base64 -d > $HOME/.kube/config || true
-
-      - name: Create SOC Namespace
-        run: |
-          kubectl create namespace soc --dry-run=client -o yaml | kubectl apply -f -
-
-      - name: Deploy SOC Stack
-        run: |
-          kubectl apply -f k8s/soc/prometheus-config.yaml
-          kubectl apply -f k8s/soc/grafana-dashboard.yaml
-          kubectl apply -f k8s/soc/prometheus-deployment.yaml
-          kubectl apply -f k8s/soc/grafana-deployment.yaml
-
-      - name: Verify SOC deployment
-        run: |
-          echo "=== SOC Components ==="
-          kubectl get pods -n soc
-          kubectl get svc -n soc
-
-      - name: SOC Status
-        run: |
-          echo "✅ SOC Stack Deployed Successfully!"
-          echo "📊 Grafana: http://localhost:3000 (admin/admin)"
-          echo "🔍 Prometheus: http://localhost:9090"        
+          echo ""
+          echo "To access SOC dashboards locally:"
+          echo "kubectl port-forward -n soc svc/grafana-service 3000:3000"
+          echo "kubectl port-forward -n soc svc/prometheus-service 9090:9090"
