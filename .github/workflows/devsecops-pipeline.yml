@@ -185,7 +185,7 @@ jobs:
         run: docker stop test-app && docker rm test-app
 
   deploy-k8s:
-    name: "Deploy — Kubernetes"
+    name: "Deploy — AWS EKS"
     runs-on: ubuntu-latest
     needs: dast-scan
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -194,25 +194,66 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure kubectl
-        uses: azure/setup-kubectl@v3
+      - name: Configure AWS credentials with session token
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          version: "latest"
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Set kubeconfig
+      - name: Install eksctl
         run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > $HOME/.kube/config
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin
+          eksctl version
+
+      - name: Check AWS identity
+        run: |
+          aws sts get-caller-identity
+          aws eks list-clusters --region ${{ secrets.AWS_REGION }} || echo "No clusters yet"
+
+      - name: Create EKS cluster (if not exists)
+        run: |
+          if ! aws eks describe-cluster --name devsecops-cluster --region ${{ secrets.AWS_REGION }} 2>/dev/null; then
+            echo "Creating EKS cluster (this takes 15-20 minutes)..."
+            eksctl create cluster \
+              --name devsecops-cluster \
+              --region ${{ secrets.AWS_REGION }} \
+              --nodegroup-name devsecops-nodes \
+              --node-type t3.medium \
+              --nodes 2 \
+              --nodes-min 1 \
+              --nodes-max 3 \
+              --managed \
+              --timeout=20m
+          else
+            echo "Cluster already exists"
+          fi
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ secrets.AWS_REGION }} --name devsecops-cluster
+
+      - name: Verify cluster access
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
 
       - name: Apply Kubernetes manifests
         run: |
-          kubectl apply -f k8s/namespace.yaml
-          kubectl apply -f k8s/secret.yaml
-          kubectl apply -f k8s/deployment.yaml
-          kubectl apply -f k8s/service.yaml
-          kubectl apply -f k8s/ingress.yaml
+          # Créer le namespace
+          kubectl apply -f k8s/namespace.yml
+          
+          # Appliquer les secrets
+          kubectl apply -f k8s/secret.yml
+          
+          # Déployer l'application
+          kubectl apply -f k8s/deployment.yml
+          kubectl apply -f k8s/service.yml
+          kubectl apply -f k8s/ingress.yml || echo "Ingress skipped"
 
-      - name: Update image tag
+      - name: Update image to latest
         run: |
           kubectl set image deployment/devsecops-app \
             devsecops-app=${{ env.IMAGE_NAME }}:${{ github.sha }} \
@@ -220,9 +261,20 @@ jobs:
 
       - name: Wait for rollout
         run: |
-          kubectl rollout status deployment/devsecops-app -n devsecops --timeout=120s
+          kubectl rollout status deployment/devsecops-app -n devsecops --timeout=300s
 
-      - name: Verify deployment
+      - name: Get deployment status
         run: |
+          echo "=== Pods ==="
           kubectl get pods -n devsecops
+          echo "=== Services ==="
           kubectl get svc -n devsecops
+          echo "=== Ingress ==="
+          kubectl get ingress -n devsecops
+          
+          # Pour le LoadBalancer
+          if kubectl get svc devsecops-app-service -n devsecops 2>/dev/null; then
+            echo "Waiting for LoadBalancer IP..."
+            sleep 30
+            kubectl get svc devsecops-app-service -n devsecops
+          fi
