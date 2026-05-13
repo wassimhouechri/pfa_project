@@ -342,7 +342,7 @@ jobs:
           echo "Namespace: devsecops"
           echo "Replicas: 2"
           echo "========================================="
-    soc-deploy:
+  soc-deploy:
     name: "SOC - Security Operations Center"
     runs-on: ubuntu-latest
     needs: deploy-k8s
