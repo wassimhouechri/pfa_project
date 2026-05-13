@@ -152,11 +152,16 @@ jobs:
             echo "Attempt $i failed, retrying in 3s..."
             sleep 3
           done
-
+      - name: Get container IP address
+        run: |
+          CONTAINER_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' test-app)
+          echo "Container IP: $CONTAINER_IP"
+          echo "CONTAINER_IP=$CONTAINER_IP" >> $GITHUB_ENV 
+        
       - name: OWASP ZAP — baseline scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: "http://host.docker.internal:5000"
+          target: "http://${{ env.CONTAINER_IP }}:5000"
           cmd_options: "-I"
 
       - name: Upload ZAP report
