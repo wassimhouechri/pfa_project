@@ -1,4 +1,4 @@
-name: "DevSecOps CI/CD Pipeline/04"
+name: "DevSecOps CI/CD04"
 
 on:
   push:
