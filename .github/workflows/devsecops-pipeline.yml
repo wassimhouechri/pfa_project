@@ -342,3 +342,43 @@ jobs:
           echo "Namespace: devsecops"
           echo "Replicas: 2"
           echo "========================================="
+    soc-deploy:
+    name: "SOC - Security Operations Center"
+    runs-on: ubuntu-latest
+    needs: deploy-k8s
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_KIND }}" | base64 -d > $HOME/.kube/config || true
+
+      - name: Create SOC Namespace
+        run: |
+          kubectl create namespace soc --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy SOC Stack
+        run: |
+          kubectl apply -f k8s/soc/prometheus-config.yaml
+          kubectl apply -f k8s/soc/grafana-dashboard.yaml
+          kubectl apply -f k8s/soc/prometheus-deployment.yaml
+          kubectl apply -f k8s/soc/grafana-deployment.yaml
+
+      - name: Verify SOC deployment
+        run: |
+          echo "=== SOC Components ==="
+          kubectl get pods -n soc
+          kubectl get svc -n soc
+
+      - name: SOC Status
+        run: |
+          echo "✅ SOC Stack Deployed Successfully!"
+          echo "📊 Grafana: http://localhost:3000 (admin/admin)"
+          echo "🔍 Prometheus: http://localhost:9090"        
