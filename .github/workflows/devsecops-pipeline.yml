@@ -206,6 +206,17 @@ jobs:
         with:
           version: 'latest'
 
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.REPO_USER }}
+          password: ${{ secrets.PWD }}
+
+      - name: Pull Docker image from Docker Hub
+        run: |
+          docker pull ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker pull ${{ env.IMAGE_NAME }}:latest
+
       - name: Create KIND cluster
         run: |
           cat <<EOF | kind create cluster --name=devsecops-cluster --config=-
