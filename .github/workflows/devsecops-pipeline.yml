@@ -320,8 +320,13 @@ jobs:
         if: always()
         run: |
           mkdir -p k8s-info
-          kubectl describe pods -n devsecops > k8s-info/pods-describe.txt
-          kubectl logs -n devsecops --all-containers --tail=50 > k8s-info/logs.txt
+    
+          POD_NAME=$(kubectl get pods -n devsecops -o jsonpath='{.items[0].metadata.name}')
+          if [ -n "$POD_NAME" ]; then
+            kubectl logs -n devsecops $POD_NAME --tail=50 > k8s-info/logs.txt
+          else
+            echo "No pods found" > k8s-info/logs.txt
+          fi
           kubectl get all -n devsecops -o wide > k8s-info/all-resources.txt
           echo "✅ Deployment information collected"
 
