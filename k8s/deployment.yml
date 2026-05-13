@@ -7,14 +7,19 @@ metadata:
     app: devsecops-app
     version: "1.0.0"
     environment: production
+    part-of: devsecops-platform
     managed-by: gitops
+  annotations:
+    description: "DevSecOps Demo Application - Flask"
+    maintainer: "DevSecOps Team"
 spec:
-  replicas: 3
+  replicas: 2
   strategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
+  revisionHistoryLimit: 10
   selector:
     matchLabels:
       app: devsecops-app
@@ -26,106 +31,81 @@ spec:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "5000"
-        prometheus.io/path: "/metrics"
+        prometheus.io/path: "/health"
     spec:
       containers:
-        - name: devsecops-app
-          image: wassimoz/devsecops-project:latest
-          imagePullPolicy: IfNotPresent
-          ports:
-            - name: http
-              containerPort: 5000
-              protocol: TCP
-          env:
-            - name: SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: devsecops-secret
-                  key: secret-key
-            - name: PORT
-              value: "5000"
-            - name: PYTHONUNBUFFERED
-              value: "1"
-            - name: FLASK_ENV
-              value: "production"
-          envFrom:
-            - configMapRef:
-                name: devsecops-config
-                optional: true
-          # Probes de santé optimisées
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 5000
-              scheme: HTTP
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            successThreshold: 1
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 5000
-              scheme: HTTP
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            timeoutSeconds: 3
-            successThreshold: 1
-            failureThreshold: 3
-          startupProbe:
-            httpGet:
-              path: /health
-              port: 5000
-            initialDelaySeconds: 0
-            periodSeconds: 5
-            failureThreshold: 30
-          # Resources avec autoscaling
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "128Mi"
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
-          # Security context renforcé
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 3000
-            capabilities:
-              drop:
-                - ALL
-            seccompProfile:
-              type: RuntimeDefault
-          volumeMounts:
-            - name: tmp
-              mountPath: /tmp
-            - name: cache
-              mountPath: /app/.cache
-      volumes:
-        - name: tmp
-          emptyDir: {}
-        - name: cache
-          emptyDir: {}
+      - name: app
+        image: wassimoz/devsecops-project:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 5000
+          protocol: TCP
+        env:
+        - name: SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: devsecops-secret
+              key: secret-key
+        - name: PORT
+          value: "5000"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: FLASK_ENV
+          value: "production"
+        # Probes de santé - délais augmentés pour KIND
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          failureThreshold: 30
+          timeoutSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5
+        # Resources adaptées pour KIND
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "300m"
+            memory: "256Mi"
+        # SecurityContext allégé pour KIND
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: false  # CHANGÉ: false pour Flask
+      # Tolérations pour KIND
+      tolerations:
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300
       restartPolicy: Always
       terminationGracePeriodSeconds: 30
-      nodeSelector:
-        kubernetes.io/os: linux
-      tolerations:
-        - key: "CriticalAddonsOnly"
-          operator: "Exists"
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-            - weight: 100
-              podAffinityTerm:
-                labelSelector:
-                  matchExpressions:
-                    - key: app
-                      operator: In
-                      values:
-                        - devsecops-app
-                topologyKey: kubernetes.io/hostname

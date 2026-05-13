@@ -10,16 +10,13 @@ metadata:
     prometheus.io/scrape: "true"
     prometheus.io/port: "5000"
 spec:
-  type: LoadBalancer
+  type: NodePort  # Pour KIND
   selector:
     app: devsecops-app
   ports:
-    - name: http
-      protocol: TCP
-      port: 80
-      targetPort: 5000
-    - name: metrics
-      protocol: TCP
-      port: 9090
-      targetPort: 5000
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 5000
+    nodePort: 30080
   sessionAffinity: None
