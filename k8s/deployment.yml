@@ -7,11 +7,8 @@ metadata:
     app: devsecops-app
     version: "1.0.0"
     environment: production
-    part-of: devsecops-platform
-    managed-by: gitops
   annotations:
-    description: "DevSecOps Demo Application - Flask"
-    maintainer: "DevSecOps Team"
+    description: "DevSecOps Production Application"
 spec:
   replicas: 2
   strategy:
@@ -19,7 +16,6 @@ spec:
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
-  revisionHistoryLimit: 10
   selector:
     matchLabels:
       app: devsecops-app
@@ -28,10 +24,6 @@ spec:
       labels:
         app: devsecops-app
         version: "1.0.0"
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "5000"
-        prometheus.io/path: "/health"
     spec:
       containers:
       - name: app
@@ -51,14 +43,12 @@ spec:
           value: "5000"
         - name: PYTHONUNBUFFERED
           value: "1"
-        - name: FLASK_ENV
-          value: "production"
-        # Probes de santé - délais augmentés pour KIND
+        # Probes de santé optimisées
         startupProbe:
           httpGet:
             path: /health
             port: 5000
-          initialDelaySeconds: 0
+          initialDelaySeconds: 5
           periodSeconds: 5
           failureThreshold: 30
           timeoutSeconds: 3
@@ -66,29 +56,27 @@ spec:
           httpGet:
             path: /health
             port: 5000
-          initialDelaySeconds: 10
+          initialDelaySeconds: 5
           periodSeconds: 10
           timeoutSeconds: 3
           successThreshold: 1
-          failureThreshold: 5
+          failureThreshold: 3
         livenessProbe:
           httpGet:
             path: /health
             port: 5000
-          initialDelaySeconds: 30
+          initialDelaySeconds: 15
           periodSeconds: 20
           timeoutSeconds: 5
           successThreshold: 1
-          failureThreshold: 5
-        # Resources adaptées pour KIND
+          failureThreshold: 3
         resources:
           requests:
             cpu: "100m"
             memory: "128Mi"
           limits:
-            cpu: "300m"
-            memory: "256Mi"
-        # SecurityContext allégé pour KIND
+            cpu: "500m"
+            memory: "512Mi"
         securityContext:
           allowPrivilegeEscalation: false
           runAsNonRoot: true
@@ -96,16 +84,5 @@ spec:
           capabilities:
             drop:
             - ALL
-          readOnlyRootFilesystem: false  # CHANGÉ: false pour Flask
-      # Tolérations pour KIND
-      tolerations:
-      - key: "node.kubernetes.io/not-ready"
-        operator: "Exists"
-        effect: "NoExecute"
-        tolerationSeconds: 300
-      - key: "node.kubernetes.io/unreachable"
-        operator: "Exists"
-        effect: "NoExecute"
-        tolerationSeconds: 300
       restartPolicy: Always
       terminationGracePeriodSeconds: 30

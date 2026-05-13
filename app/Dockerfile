@@ -4,20 +4,27 @@ WORKDIR /app
 
 # Dépendances système
 RUN apt-get update \
- && apt-get install --no-install-recommends -y libpq-dev gcc \
+ && apt-get install --no-install-recommends -y libpq-dev gcc curl \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Installer les dépendances en premier (cache Docker)
-RUN pip install --no-cache-dir --upgrade pip
+# Installer les dépendances Python
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt
 
-COPY . /app/
+# Copier l'application
+COPY . .
+
+# Créer un utilisateur non-root
+RUN useradd --create-home --shell /bin/bash appuser \
+ && chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 5000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "app.app:app"]
+# Commande de démarrage avec vérification
+CMD ["sh", "-c", "echo 'Starting Gunicorn...' && gunicorn --bind 0.0.0.0:5000 --workers 2 --threads 2 --timeout 60 --access-logfile - --error-logfile - app:app"]

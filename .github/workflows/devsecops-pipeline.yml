@@ -157,7 +157,25 @@ jobs:
         run: |
           CONTAINER_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' test-app)
           echo "Container IP: $CONTAINER_IP"
+          mkdir -p zap-reports
           
+          docker run --rm \
+            -v $(pwd)/zap-reports:/zap/wrk/:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://$CONTAINER_IP:5000 \
+            -J report_json.json \
+            -w report_md.md \
+            -r report_html.html \
+            -I || true
+          
+          # Déplacer les rapports si nécessaire
+          if [ -f zap-reports/report_html.html ]; then
+            cp zap-reports/report_html.html .
+            cp zap-reports/report_json.json .
+            cp zap-reports/report_md.md .
+          fi
+
           docker run --rm \
             -v $(pwd):/zap/wrk/:rw \
             ghcr.io/zaproxy/zaproxy:stable \

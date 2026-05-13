@@ -5,18 +5,14 @@ metadata:
   namespace: devsecops
   labels:
     app: devsecops-app
-    service: devsecops-app-service
-  annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "5000"
 spec:
-  type: NodePort  # Pour KIND
+  type: NodePort
   selector:
     app: devsecops-app
   ports:
   - name: http
-    protocol: TCP
     port: 80
     targetPort: 5000
     nodePort: 30080
+    protocol: TCP
   sessionAffinity: None

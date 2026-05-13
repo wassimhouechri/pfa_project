@@ -1,3 +1,10 @@
-flask==3.0.3
-werkzeug==3.0.3
-gunicorn==22.0.0
+Flask==2.3.3
+Werkzeug==2.3.3
+Jinja2==3.1.2
+itsdangerous==2.1.2
+click==8.1.7
+gunicorn==21.2.0
+pytest==7.4.3
+pytest-cov==4.1.0
+bandit==1.7.6
+safety==2.4.0b1
