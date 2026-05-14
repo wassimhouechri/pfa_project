@@ -69,7 +69,11 @@ def logout():
 def dashboard():
     return render_template("dashboard.html", username=session["username"])
 
-
+@app.route("/soc")
+@login_required
+def soc():
+    """SOC Dashboard — Security Operations Center."""
+    return render_template("soc.html", username=session["username"])
 # ── API REST ─────────────────────────────────────────
 
 @app.route("/api/status")
@@ -81,7 +85,6 @@ def api_status():
 @login_required
 def api_whoami():
     return jsonify({"username": session["username"], "logged_in": True})
-
 
 # ── Lancement ────────────────────────────────────────
 if __name__ == "__main__":
