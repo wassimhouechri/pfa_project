@@ -209,6 +209,10 @@ jobs:
             -w report_md.md \
             -r report_html.html \
             -I || true
+          cp zap-reports/report_html.html . 2>/dev/null || true
+          cp zap-reports/report_json.json . 2>/dev/null || true
+          cp zap-reports/report_md.md . 2>/dev/null || true
+          echo "✅ ZAP scan completed"  
 
       - name: Upload ZAP report
         uses: actions/upload-artifact@v4
