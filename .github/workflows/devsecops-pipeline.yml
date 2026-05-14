@@ -294,24 +294,22 @@ jobs:
         run: |
           DEPLOY_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           IMAGE="${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
+          MSG="IMAGE CI/CD PRETE SUR DOCKER HUB"$'\n'
+          MSG+="Projet  : ${{ github.repository }}"$'\n'
+          MSG+="Branche : ${{ github.ref_name }}"$'\n'
+          MSG+="Commit  : ${{ github.sha }}"$'\n'
+          MSG+="Auteur  : ${{ github.actor }}"$'\n'
+          MSG+="Heure   : ${DEPLOY_TIME}"$'\n'
+          MSG+="Image   : ${IMAGE}"$'\n\n'
+          MSG+="ACTION REQUISE (ECS bloque par voc-cancel-cred) :"$'\n'
+          MSG+="  Console AWS > ECS > devsecops-cluster"$'\n'
+          MSG+="  > devsecops-service > Update Service"$'\n'
+          MSG+="  > Force new deployment > cocher"$'\n\n'
+          MSG+="SOC Dashboard : /ecs/devsecops (CloudWatch)"
           aws sns publish \
             --topic-arn "${{ env.SNS_TOPIC_ARN }}" \
-            --subject "✅ Image prête — ${{ github.repository }} (${{ github.ref_name }})" \
-            --message "IMAGE CI/CD PRETE SUR DOCKER HUB
-
-  Projet  : ${{ github.repository }}
-  Branche : ${{ github.ref_name }}
-  Commit  : ${{ github.sha }}
-  Auteur  : ${{ github.actor }}
-  Heure   : ${DEPLOY_TIME}
-  Image   : ${IMAGE}
-
-  ACTION REQUISE (ECS bloque par voc-cancel-cred) :
-    Console AWS > ECS > devsecops-cluster
-    > devsecops-service > Update Service
-    > Force new deployment > cocher
-
-  SOC Dashboard : /ecs/devsecops (CloudWatch)" \
+            --subject "Image prete CI/CD - ${{ github.repository }} (${{ github.ref_name }})" \
+            --message "$MSG" \
             --region ${{ env.AWS_REGION }} && echo "✅ SNS envoyé" \
             || echo "⚠️  SNS non autorisé"
 
