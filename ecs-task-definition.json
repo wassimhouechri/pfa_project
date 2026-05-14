@@ -9,7 +9,7 @@
   "containerDefinitions": [
     {
       "name": "devsecops-app",
-      "image": "792782834628.dkr.ecr.us-east-1.amazonaws.com/devsecops-project:latest",
+      "image": "DOCKERHUB_IMAGE_PLACEHOLDER",
       "essential": true,
       "portMappings": [
         {
@@ -21,7 +21,12 @@
       "environment": [
         { "name": "FLASK_ENV",        "value": "production" },
         { "name": "PORT",             "value": "5000" },
-        { "name": "PYTHONUNBUFFERED", "value": "1" }
+        { "name": "PYTHONUNBUFFERED", "value": "1" },
+        { "name": "AWS_REGION",       "value": "us-east-1" },
+        { "name": "ECS_CLUSTER",      "value": "devsecops-cluster" },
+        { "name": "ECS_SERVICE",      "value": "devsecops-service" },
+        { "name": "CW_LOG_GROUP",     "value": "/ecs/devsecops" },
+        { "name": "SNS_TOPIC_ARN",    "value": "arn:aws:sns:us-east-1:792782834628:soc-alerts" }
       ],
       "secrets": [
         {

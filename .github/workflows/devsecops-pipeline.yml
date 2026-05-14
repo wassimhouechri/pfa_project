@@ -233,40 +233,23 @@ jobs:
           aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      - name: Mettre à jour la task definition (image Docker Hub)
+      # ✅ FIX: on utilise ecs-task-definition.json du repo (DescribeTaskDefinition bloqué)
+      - name: Injecter l'image Docker Hub dans la task definition locale
         run: |
           NEW_IMAGE="${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
-          CONTAINER="${{ env.CONTAINER_NAME }}"
+          echo "🐳 Image: $NEW_IMAGE"
 
-          aws ecs describe-task-definition \
-            --task-definition ${{ env.ECS_TASK_FAMILY }} \
-            --query taskDefinition \
-            --region ${{ env.AWS_REGION }} > task-def-raw.json
+          # Remplacer le placeholder par la vraie image dans le fichier du repo
+          sed "s|DOCKERHUB_IMAGE_PLACEHOLDER|$NEW_IMAGE|g" \
+            ecs-task-definition.json > task-def-ready.json
 
-          python3 - <<PYEOF
-          import json
-
-          with open("task-def-raw.json") as f:
-              td = json.load(f)
-
-          for c in td["containerDefinitions"]:
-              if c["name"] == "$CONTAINER":
-                  c["image"] = "$NEW_IMAGE"
-
-          for key in ["taskDefinitionArn","revision","status","requiresAttributes",
-                      "compatibilities","registeredAt","registeredBy","deregisteredAt"]:
-              td.pop(key, None)
-
-          with open("task-def-new.json", "w") as f:
-              json.dump(td, f, indent=2, default=str)
-
-          print("✅ task-def-new.json prêt — image:", "$NEW_IMAGE")
-          PYEOF
+          echo "✅ task-def-ready.json:"
+          cat task-def-ready.json
 
       - name: Enregistrer et déployer la nouvelle task definition
         run: |
           NEW_ARN=$(aws ecs register-task-definition \
-            --cli-input-json file://task-def-new.json \
+            --cli-input-json file://task-def-ready.json \
             --query "taskDefinition.taskDefinitionArn" \
             --output text --region ${{ env.AWS_REGION }})
           echo "✅ Nouvelle revision: $NEW_ARN"
