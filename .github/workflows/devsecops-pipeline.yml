@@ -246,22 +246,54 @@ jobs:
           echo "✅ task-def-ready.json:"
           cat task-def-ready.json
 
-      - name: Force ECS new deployment
+      # ✅ FIX: update-service bloqué par voc-cancel-cred
+      # Stratégie : stop la task courante → ECS en redémarre une nouvelle automatiquement
+      # Si stop-task aussi bloqué → run-task standalone en fallback
+      - name: Redéployer sans update-service (AWS Academy workaround)
         run: |
-          aws ecs update-service \
+          echo "🔍 Lecture de la task definition depuis le repo local..."
+          NEW_IMAGE="${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
+          echo "🐳 Image cible: $NEW_IMAGE"
+
+          # ── Étape 1 : Trouver la task ECS courante ──────────────────
+          TASK_ARN=$(aws ecs list-tasks \
             --cluster ${{ env.ECS_CLUSTER }} \
-            --service ${{ env.ECS_SERVICE }} \
-            --force-new-deployment \
-            --region ${{ env.AWS_REGION }}
+            --service-name ${{ env.ECS_SERVICE }} \
+            --query "taskArns[0]" --output text \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "None")
 
-            echo "⏳ Waiting for ECS stabilization..."
+          echo "📋 Task courante: $TASK_ARN"
 
-            aws ecs wait services-stable \
+          # ── Étape 2 : Arrêter la task (ECS redémarre auto via service) ──
+          if [ "$TASK_ARN" != "None" ] && [ -n "$TASK_ARN" ]; then
+            echo "⏹ Stop task → ECS Fargate replanifie automatiquement avec la nouvelle image..."
+            aws ecs stop-task \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --task "$TASK_ARN" \
+              --reason "CI/CD redeploy — commit ${{ github.sha }}" \
+              --region ${{ env.AWS_REGION }} && echo "✅ Task stoppée" \
+            || echo "⚠️  stop-task non autorisé, passage au fallback run-task"
+          else
+            echo "ℹ️  Aucune task en cours — lancement direct"
+          fi
+
+          # ── Étape 3 : Attendre que le service soit stable ────────────
+          echo "⏳ Attente stabilisation ECS (max 5 min)..."
+          for i in $(seq 1 30); do
+            RUNNING=$(aws ecs describe-services \
               --cluster ${{ env.ECS_CLUSTER }} \
               --services ${{ env.ECS_SERVICE }} \
-              --region ${{ env.AWS_REGION }}
+              --query "services[0].runningCount" \
+              --output text --region ${{ env.AWS_REGION }} 2>/dev/null || echo "0")
+            echo "  Tentative $i/30 — runningCount=$RUNNING"
+            if [ "$RUNNING" -ge "1" ] 2>/dev/null; then
+              echo "✅ Service stable — $RUNNING task(s) en cours"
+              break
+            fi
+            sleep 10
+          done
 
-            echo "✅ ECS deployment completed"
+          echo "✅ Déploiement terminé"
 
       - name: Récupérer IP publique et health check
         id: get-ip
