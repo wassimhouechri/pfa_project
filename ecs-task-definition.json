@@ -1,54 +1,352 @@
-{
-  "family": "devsecops-task",
-  "networkMode": "awsvpc",
-  "requiresCompatibilities": ["FARGATE"],
-  "cpu": "512",
-  "memory": "1024",
-  "executionRoleArn": "arn:aws:iam::792782834628:role/LabRole",
-  "taskRoleArn": "arn:aws:iam::792782834628:role/LabRole",
-  "containerDefinitions": [
-    {
-      "name": "devsecops-app",
-      "image": "DOCKERHUB_IMAGE_PLACEHOLDER",
-      "essential": true,
-      "portMappings": [
-        {
-          "containerPort": 5000,
-          "hostPort": 5000,
-          "protocol": "tcp"
-        }
-      ],
-      "environment": [
-        { "name": "FLASK_ENV",        "value": "production" },
-        { "name": "PORT",             "value": "5000" },
-        { "name": "PYTHONUNBUFFERED", "value": "1" },
-        { "name": "AWS_REGION",       "value": "us-east-1" },
-        { "name": "ECS_CLUSTER",      "value": "devsecops-cluster" },
-        { "name": "ECS_SERVICE",      "value": "devsecops-service" },
-        { "name": "CW_LOG_GROUP",     "value": "/ecs/devsecops" },
-        { "name": "SNS_TOPIC_ARN",    "value": "arn:aws:sns:us-east-1:792782834628:soc-alerts" }
-      ],
-      "secrets": [
-        {
-          "name": "SECRET_KEY",
-          "valueFrom": "arn:aws:ssm:us-east-1:792782834628:parameter/devsecops/secret-key"
-        }
-      ],
-      "logConfiguration": {
-        "logDriver": "awslogs",
-        "options": {
-          "awslogs-group":         "/ecs/devsecops",
-          "awslogs-region":        "us-east-1",
-          "awslogs-stream-prefix": "ecs"
-        }
-      },
-      "healthCheck": {
-        "command":     ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"],
-        "interval":    30,
-        "timeout":     5,
-        "retries":     3,
-        "startPeriod": 60
-      }
-    }
-  ]
-}
+name: "DevSecOps CI/CD Pipeline — AWS Academy"
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  AWS_REGION:       us-east-1
+  # ✅ Docker Hub au lieu d'ECR (ECR bloqué par voc-cancel-cred sur AWS Academy)
+  DOCKERHUB_IMAGE:  ${{ secrets.REPO_USER }}/devsecops-project
+  ECS_CLUSTER:      devsecops-cluster
+  ECS_SERVICE:      devsecops-service
+  ECS_TASK_FAMILY:  devsecops-task
+  CONTAINER_NAME:   devsecops-app
+  LOG_GROUP:        /ecs/devsecops
+  SNS_TOPIC_ARN:    arn:aws:sns:us-east-1:792782834628:soc-alerts
+
+# ============================================================
+# JOB 1 — SAST + Tests unitaires
+# ============================================================
+jobs:
+  sast-scan:
+    name: "Secrets & Static Analysis"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks — detect secrets in git history
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --source . --verbose --redact --exit-code=0 --no-git
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r app/requirements.txt
+          pip install bandit safety pytest pytest-cov
+
+      - name: Bandit — static code analysis
+        run: |
+          bandit -r app/ -f json -o bandit-report.json -ll --exclude app/tests || true
+          echo "✅ Bandit scan complete"
+
+      - name: Safety — check CVEs in dependencies
+        run: |
+          safety check -r app/requirements.txt --json > safety-report.json || true
+          echo "✅ Safety scan complete"
+
+      - name: Run unit tests
+        run: |
+          cd app
+          pytest tests/ -v \
+            --junitxml=test-results.xml \
+            --cov=. \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing
+          echo "✅ All tests passed"
+
+      - name: Upload SAST reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sast-reports
+          path: |
+            bandit-report.json
+            safety-report.json
+            app/test-results.xml
+            app/coverage.xml
+          retention-days: 14
+
+# ============================================================
+# JOB 2 — Build Docker Hub + Trivy scan
+# ✅ FIX 1: Docker Hub au lieu d'ECR (voc-cancel-cred)
+# ✅ FIX 2: Trivy scanne l'image locale avant push
+# ✅ FIX 3: CodeQL v4 (v3 déprécié)
+# ============================================================
+  build-scan:
+    name: "Build & Container Security — Docker Hub"
+    runs-on: ubuntu-latest
+    needs: sast-scan
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.REPO_USER }}
+          password: ${{ secrets.PWD }}
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }} \
+            -t ${{ env.DOCKERHUB_IMAGE }}:latest \
+            ./app
+          echo "✅ Image built: ${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
+
+      - name: Trivy — scan image locale (CRITICAL + HIGH)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref:      "${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
+          scan-type:      "image"
+          format:         "sarif"
+          output:         "trivy-results.sarif"
+          severity:       "CRITICAL,HIGH"
+          exit-code:      "0"
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF — GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: Push image to Docker Hub
+        if: github.event_name == 'push'
+        run: |
+          docker push ${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}
+          docker push ${{ env.DOCKERHUB_IMAGE }}:latest
+          echo "✅ Image pushed: ${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
+
+# ============================================================
+# JOB 3 — DAST : OWASP ZAP (depuis Docker Hub)
+# ============================================================
+  dast-scan:
+    name: "DAST — OWASP ZAP"
+    runs-on: ubuntu-latest
+    needs: build-scan
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.REPO_USER }}
+          password: ${{ secrets.PWD }}
+
+      - name: Start app container (depuis Docker Hub)
+        run: |
+          docker run -d \
+            --name test-app \
+            -p 5000:5000 \
+            -e SECRET_KEY="test-secret-zap" \
+            -e PORT="5000" \
+            ${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}
+
+      - name: Wait for /health endpoint
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://localhost:5000/health; then
+              echo "✅ App ready at attempt $i"
+              break
+            fi
+            echo "  Attempt $i/30 — retrying in 3s..."
+            sleep 3
+          done
+
+      - name: OWASP ZAP baseline scan
+        run: |
+          CONTAINER_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' test-app)
+          mkdir -p zap-reports && chmod 777 zap-reports
+          docker run --rm \
+            -v $(pwd)/zap-reports:/zap/wrk/:rw \
+            --user root \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t http://$CONTAINER_IP:5000 \
+            -J report_json.json \
+            -w report_md.md \
+            -r report_html.html \
+            -I || true
+          cp zap-reports/report_html.html . 2>/dev/null || true
+          cp zap-reports/report_json.json . 2>/dev/null || true
+          echo "✅ ZAP scan completed"
+
+      - name: Upload ZAP report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-report
+          path: |
+            report_html.html
+            report_json.json
+            report_md.md
+          retention-days: 14
+
+      - name: Stop test container
+        if: always()
+        run: docker stop test-app || true && docker rm test-app || true
+
+# ============================================================
+# JOB 4 — Deploy vers AWS ECS Fargate (image Docker Hub)
+# ✅ FIX: task definition mise à jour via Python (pas render-task-def)
+# ============================================================
+  deploy-aws:
+    name: "Deploy — AWS ECS Fargate"
+    runs-on: ubuntu-latest
+    needs: dast-scan
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    outputs:
+      public_ip:   ${{ steps.get-ip.outputs.public_ip }}
+      task_id:     ${{ steps.get-ip.outputs.task_id }}
+      deploy_time: ${{ steps.get-ip.outputs.deploy_time }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      # ✅ FIX: on utilise ecs-task-definition.json du repo (DescribeTaskDefinition bloqué)
+      - name: Injecter l'image Docker Hub dans la task definition locale
+        id: prepare-task-definition
+        run: |
+          NEW_IMAGE="${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
+          echo "🐳 Image: $NEW_IMAGE"
+
+          # Remplacer le placeholder par la vraie image dans le fichier du repo
+          sed "s|DOCKERHUB_IMAGE_PLACEHOLDER|$NEW_IMAGE|g" \
+            ecs-task-definition.json > task-def-ready.json
+
+          echo "✅ task-def-ready.json:"
+          cat task-def-ready.json
+
+          # Enregistrer la nouvelle définition de tâche
+          TASK_DEFINITION_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://task-def-ready.json \
+            --query "taskDefinition.taskDefinitionArn" --output text \
+            --region ${{ env.AWS_REGION }})
+          echo "task_definition_arn=$TASK_DEFINITION_ARN" >> $GITHUB_OUTPUT
+          echo "✅ Task Definition Registered: $TASK_DEFINITION_ARN"
+
+      - name: Force ECS new deployment
+        run: |
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ steps.prepare-task-definition.outputs.task_definition_arn }} \
+            --force-new-deployment \
+            --region ${{ env.AWS_REGION }}
+
+            echo "⏳ Waiting for ECS stabilization..."
+
+            aws ecs wait services-stable \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --services ${{ env.ECS_SERVICE }} \
+              --region ${{ env.AWS_REGION }}
+
+            echo "✅ ECS deployment completed"
+
+      - name: Récupérer IP publique et health check
+        id: get-ip
+        run: |
+          DEPLOY_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service-name ${{ env.ECS_SERVICE }} \
+            --query "taskArns[0]" --output text \
+            --region ${{ env.AWS_REGION }})
+          TASK_ID=$(echo $TASK_ARN | awk -F/ '{print $NF}')
+
+          ENI_ID=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks $TASK_ARN \
+            --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" \
+            --output text --region ${{ env.AWS_REGION }})
+
+          PUBLIC_IP=$(aws ec2 describe-network-interfaces \
+            --network-interface-ids $ENI_ID \
+            --query "NetworkInterfaces[0].Association.PublicIp" \
+            --output text --region ${{ env.AWS_REGION }})
+
+          sleep 15
+          HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://$PUBLIC_IP:5000/health || echo "000")
+
+          echo "public_ip=$PUBLIC_IP"     >> $GITHUB_OUTPUT
+          echo "task_id=$TASK_ID"         >> $GITHUB_OUTPUT
+          echo "deploy_time=$DEPLOY_TIME" >> $GITHUB_OUTPUT
+
+          echo ""
+          echo "========================================="
+          echo "✅  DEPLOYMENT COMPLETED"
+          echo "========================================="
+          echo "  App    : http://$PUBLIC_IP:5000"
+          echo "  SOC    : http://$PUBLIC_IP:5000/soc"
+          echo "  Health : HTTP $HEALTH"
+          echo "  Image  : ${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
+          echo "========================================="
+
+      - name: Tail CloudWatch logs
+        if: always()
+        run: |
+          TASK_ID=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --query "taskArns[0]" --output text \
+            --region ${{ env.AWS_REGION }} | awk -F/ '{print $NF}')
+          aws logs get-log-events \
+            --log-group-name ${{ env.LOG_GROUP }} \
+            --log-stream-name "ecs/${{ env.CONTAINER_NAME }}/$TASK_ID" \
+            --limit 30 --region ${{ env.AWS_REGION }} \
+            --query "events[*].message" --output text 2>/dev/null || echo "(logs not yet available)"
+
+# ============================================================
+# JOB 5 — SOC Reset : réinitialise le dashboard après chaque deploy
+# ============================================================
+  soc-reset:
+    name: "SOC Reset — Dashboard réinitialisé"
+    runs-on: ubuntu-latest
+    needs: deploy-aws
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Remise à 0 des métriques SOC CloudWatch
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          aws cloudwatch put-metric-data \
+            --namespace "SOC/Security" \
+            --metric-data MetricName=ErrorCount,Dimensions=[{Name=LogGroup,Value=${{ env.LOG_GROUP }}}
