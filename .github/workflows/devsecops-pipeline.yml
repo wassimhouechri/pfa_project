@@ -240,33 +240,28 @@ jobs:
           echo "🐳 Image: $NEW_IMAGE"
 
           # Remplacer le placeholder par la vraie image dans le fichier du repo
-          sed "s|wassimoz/devsecops-project:abc123sha|$NEW_IMAGE|g" \
+          sed "s|DOCKERHUB_IMAGE_PLACEHOLDER|$NEW_IMAGE|g" \
             ecs-task-definition.json > task-def-ready.json
 
           echo "✅ task-def-ready.json:"
           cat task-def-ready.json
 
-      - name: Enregistrer et déployer la nouvelle task definition
+      - name: Force ECS new deployment
         run: |
-          NEW_ARN=$(aws ecs register-task-definition \
-            --cli-input-json file://task-def-ready.json \
-            --query "taskDefinition.taskDefinitionArn" \
-            --output text --region ${{ env.AWS_REGION }})
-          echo "✅ Nouvelle revision: $NEW_ARN"
-
           aws ecs update-service \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service ${{ env.ECS_SERVICE }} \
-            --task-definition "$NEW_ARN" \
             --force-new-deployment \
             --region ${{ env.AWS_REGION }}
 
-          echo "⏳ Attente stabilisation..."
-          aws ecs wait services-stable \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --region ${{ env.AWS_REGION }}
-          echo "✅ Service ECS stable"
+            echo "⏳ Waiting for ECS stabilization..."
+
+            aws ecs wait services-stable \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --services ${{ env.ECS_SERVICE }} \
+              --region ${{ env.AWS_REGION }}
+
+            echo "✅ ECS deployment completed"
 
       - name: Récupérer IP publique et health check
         id: get-ip
