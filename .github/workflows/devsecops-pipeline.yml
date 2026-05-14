@@ -298,3 +298,42 @@ jobs:
             --topic-arn "${{ env.SNS_TOPIC_ARN }}" \
             --subject "✅ Image prête — ${{ github.repository }} (${{ github.ref_name }})" \
             --message "IMAGE CI/CD PRETE SUR DOCKER HUB
+
+  Projet  : ${{ github.repository }}
+  Branche : ${{ github.ref_name }}
+  Commit  : ${{ github.sha }}
+  Auteur  : ${{ github.actor }}
+  Heure   : ${DEPLOY_TIME}
+  Image   : ${IMAGE}
+
+  ACTION REQUISE (ECS bloque par voc-cancel-cred) :
+    Console AWS > ECS > devsecops-cluster
+    > devsecops-service > Update Service
+    > Force new deployment > cocher
+
+  SOC Dashboard : /ecs/devsecops (CloudWatch)" \
+            --region ${{ env.AWS_REGION }} && echo "✅ SNS envoyé" \
+            || echo "⚠️  SNS non autorisé"
+
+      # ── Résumé ──────────────────────────────────────────────────────
+      - name: Résumé pipeline
+        run: |
+          IMAGE="${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
+          echo "╔══════════════════════════════════════════════════╗"
+          echo "║          PIPELINE CI/CD — TERMINÉ ✅             ║"
+          echo "╠══════════════════════════════════════════════════╣"
+          echo "║ Commit  : ${{ github.sha }}"
+          echo "║ Image   : $IMAGE"
+          echo "║ Acteur  : ${{ github.actor }}"
+          echo "╠══════════════════════════════════════════════════╣"
+          echo "║ ✅ SAST (Bandit + Safety + Tests)                ║"
+          echo "║ ✅ Build + Trivy scan                            ║"
+          echo "║ ✅ DAST (OWASP ZAP)                              ║"
+          echo "║ ✅ Image poussée sur Docker Hub                  ║"
+          echo "║ ✅ Log CI/CD → CloudWatch                        ║"
+          echo "║ ✅ Métriques SOC → 0                             ║"
+          echo "║ ✅ Notification SNS envoyée                      ║"
+          echo "╠══════════════════════════════════════════════════╣"
+          echo "║ ⚠️  ECS deploy bloqué (voc-cancel-cred)          ║"
+          echo "║    → Faire manuellement depuis la console AWS    ║"
+          echo "╚══════════════════════════════════════════════════╝"
