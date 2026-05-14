@@ -97,7 +97,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (Academy temporaires)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -191,17 +191,15 @@ jobs:
 
       - name: OWASP ZAP baseline scan
         run: |
-          CONTAINER_IP=$(docker inspect -f \
-            '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' test-app)
+          CONTAINER_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' test-app)
           echo "Container IP: $CONTAINER_IP"
-    
-    
+          
           mkdir -p zap-reports
-          chmod 777 zap-reports  # Allow container user to write
-    
+          chmod 777 zap-reports
+          
           docker run --rm \
             -v $(pwd)/zap-reports:/zap/wrk/:rw \
-            --user root \  # Add this line to run as root
+            --user root \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
             -t http://$CONTAINER_IP:5000 \
@@ -209,10 +207,11 @@ jobs:
             -w report_md.md \
             -r report_html.html \
             -I || true
+          
           cp zap-reports/report_html.html . 2>/dev/null || true
           cp zap-reports/report_json.json . 2>/dev/null || true
           cp zap-reports/report_md.md . 2>/dev/null || true
-          echo "✅ ZAP scan completed"  
+          echo "✅ ZAP scan completed"
 
       - name: Upload ZAP report
         uses: actions/upload-artifact@v4
@@ -227,10 +226,12 @@ jobs:
 
       - name: Stop test container
         if: always()
-        run: docker stop test-app && docker rm test-app
+        run: |
+          docker stop test-app || true
+          docker rm test-app || true
 
 # ============================================================
-# JOB 4 — Deploy vers AWS ECS Fargate (remplace KIND/K8s)
+# JOB 4 — Deploy vers AWS ECS Fargate
 # ============================================================
   deploy-aws:
     name: "Deploy — AWS ECS Fargate"
@@ -254,7 +255,6 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Télécharge la task def actuelle et injecte le nouveau SHA d'image
       - name: Download current task definition
         run: |
           aws ecs describe-task-definition \
@@ -293,7 +293,6 @@ jobs:
 
       - name: Get public IP and run health check
         run: |
-          # Récupère l'IP publique de la task ECS
           TASK_ARN=$(aws ecs list-tasks \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service-name ${{ env.ECS_SERVICE }} \
@@ -313,7 +312,6 @@ jobs:
 
           sleep 10
 
-          # Test /health
           HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://$PUBLIC_IP:5000/health || echo "000")
           if [ "$HEALTH" = "200" ]; then
             echo "✅ /health → HTTP 200"
@@ -321,7 +319,6 @@ jobs:
             echo "⚠️  /health → HTTP $HEALTH (app may still be starting)"
           fi
 
-          # Test /api/status
           API_RESP=$(curl -s http://$PUBLIC_IP:5000/api/status 2>/dev/null || echo "{}")
           if echo "$API_RESP" | grep -q "ok"; then
             echo "✅ /api/status → running"
