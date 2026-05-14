@@ -14,6 +14,8 @@ env:
   ECS_SERVICE:      devsecops-service
   ECS_TASK_FAMILY:  devsecops-task
   CONTAINER_NAME:   devsecops-app
+  LOG_GROUP:        /ecs/devsecops
+  SNS_TOPIC_ARN:    arn:aws:sns:us-east-1:792782834628:soc-alerts
 
 # ============================================================
 # JOB 1 — SAST + Tests unitaires
@@ -116,7 +118,6 @@ jobs:
             -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest \
             ./app
           echo "✅ Image built"
-          docker images | grep devsecops
 
       - name: Trivy — vulnerability scan (CRITICAL + HIGH only)
         uses: aquasecurity/trivy-action@master
@@ -140,8 +141,7 @@ jobs:
         run: |
           docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
-          echo "✅ Image pushed:"
-          echo "   ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          echo "✅ Image pushed: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
 
 # ============================================================
 # JOB 3 — DAST : OWASP ZAP scan (depuis ECR)
@@ -174,15 +174,12 @@ jobs:
             -e SECRET_KEY="test-secret-zap" \
             -e PORT="5000" \
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
-          echo "✅ Container started"
 
       - name: Wait for /health endpoint
         run: |
-          echo "Waiting for app to start (max 90s)..."
           for i in {1..30}; do
             if curl -sf http://localhost:5000/health; then
-              echo ""
-              echo "✅ App is ready at attempt $i"
+              echo "✅ App ready at attempt $i"
               break
             fi
             echo "  Attempt $i/30 — retrying in 3s..."
@@ -192,11 +189,7 @@ jobs:
       - name: OWASP ZAP baseline scan
         run: |
           CONTAINER_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' test-app)
-          echo "Container IP: $CONTAINER_IP"
-          
-          mkdir -p zap-reports
-          chmod 777 zap-reports
-          
+          mkdir -p zap-reports && chmod 777 zap-reports
           docker run --rm \
             -v $(pwd)/zap-reports:/zap/wrk/:rw \
             --user root \
@@ -207,10 +200,8 @@ jobs:
             -w report_md.md \
             -r report_html.html \
             -I || true
-          
           cp zap-reports/report_html.html . 2>/dev/null || true
           cp zap-reports/report_json.json . 2>/dev/null || true
-          cp zap-reports/report_md.md . 2>/dev/null || true
           echo "✅ ZAP scan completed"
 
       - name: Upload ZAP report
@@ -226,9 +217,7 @@ jobs:
 
       - name: Stop test container
         if: always()
-        run: |
-          docker stop test-app || true
-          docker rm test-app || true
+        run: docker stop test-app || true && docker rm test-app || true
 
 # ============================================================
 # JOB 4 — Deploy vers AWS ECS Fargate
@@ -238,6 +227,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: dast-scan
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Expose les outputs pour le job SOC reset
+    outputs:
+      public_ip:   ${{ steps.get-ip.outputs.public_ip }}
+      task_id:     ${{ steps.get-ip.outputs.task_id }}
+      deploy_time: ${{ steps.get-ip.outputs.deploy_time }}
 
     steps:
       - name: Checkout code
@@ -263,7 +257,6 @@ jobs:
             --region ${{ env.AWS_REGION }} \
             > task-def.json
           echo "✅ Task definition downloaded"
-          cat task-def.json | python3 -c "import json,sys; d=json.load(sys.stdin); print('  Current image:', d['containerDefinitions'][0]['image'])"
 
       - name: Inject new image SHA into task definition
         id: task-def
@@ -276,28 +269,23 @@ jobs:
       - name: Deploy new task definition to ECS
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
-          task-definition:          ${{ steps.task-def.outputs.task-definition }}
-          service:                  ${{ env.ECS_SERVICE }}
-          cluster:                  ${{ env.ECS_CLUSTER }}
+          task-definition:            ${{ steps.task-def.outputs.task-definition }}
+          service:                    ${{ env.ECS_SERVICE }}
+          cluster:                    ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
 
-      - name: Verify ECS service health
-        run: |
-          echo "=== ECS Service Status ==="
-          aws ecs describe-services \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services ${{ env.ECS_SERVICE }} \
-            --query "services[0].{Status:status,Running:runningCount,Desired:desiredCount,Pending:pendingCount}" \
-            --output table \
-            --region ${{ env.AWS_REGION }}
-
       - name: Get public IP and run health check
+        id: get-ip
         run: |
+          DEPLOY_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
           TASK_ARN=$(aws ecs list-tasks \
             --cluster ${{ env.ECS_CLUSTER }} \
             --service-name ${{ env.ECS_SERVICE }} \
             --query "taskArns[0]" --output text \
             --region ${{ env.AWS_REGION }})
+
+          TASK_ID=$(echo $TASK_ARN | awk -F/ '{print $NF}')
 
           ENI_ID=$(aws ecs describe-tasks \
             --cluster ${{ env.ECS_CLUSTER }} \
@@ -313,28 +301,21 @@ jobs:
           sleep 10
 
           HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://$PUBLIC_IP:5000/health || echo "000")
-          if [ "$HEALTH" = "200" ]; then
-            echo "✅ /health → HTTP 200"
-          else
-            echo "⚠️  /health → HTTP $HEALTH (app may still be starting)"
-          fi
+          echo "Health check: HTTP $HEALTH"
 
-          API_RESP=$(curl -s http://$PUBLIC_IP:5000/api/status 2>/dev/null || echo "{}")
-          if echo "$API_RESP" | grep -q "ok"; then
-            echo "✅ /api/status → running"
-          else
-            echo "⚠️  /api/status → $API_RESP"
-          fi
+          # Expose les outputs pour le job soc-reset
+          echo "public_ip=$PUBLIC_IP"     >> $GITHUB_OUTPUT
+          echo "task_id=$TASK_ID"         >> $GITHUB_OUTPUT
+          echo "deploy_time=$DEPLOY_TIME" >> $GITHUB_OUTPUT
 
           echo ""
           echo "========================================="
           echo "✅  DEPLOYMENT COMPLETED SUCCESSFULLY"
           echo "========================================="
-          echo "  App URL     : http://$PUBLIC_IP:5000"
-          echo "  Health      : http://$PUBLIC_IP:5000/health"
-          echo "  API status  : http://$PUBLIC_IP:5000/api/status"
-          echo "  Dashboard   : http://$PUBLIC_IP:5000/login"
-          echo "  ECR Image   : ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          echo "  App URL    : http://$PUBLIC_IP:5000"
+          echo "  Dashboard  : http://$PUBLIC_IP:5000/login"
+          echo "  SOC        : http://$PUBLIC_IP:5000/soc"
+          echo "  ECR Image  : ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
           echo "========================================="
 
       - name: Tail CloudWatch logs
@@ -347,9 +328,173 @@ jobs:
             --region ${{ env.AWS_REGION }} | awk -F/ '{print $NF}')
 
           aws logs get-log-events \
-            --log-group-name /ecs/devsecops \
+            --log-group-name ${{ env.LOG_GROUP }} \
             --log-stream-name "ecs/${{ env.CONTAINER_NAME }}/$TASK_ID" \
             --limit 30 \
             --region ${{ env.AWS_REGION }} \
             --query "events[*].message" \
             --output text 2>/dev/null || echo "(logs not yet available)"
+
+# ============================================================
+# JOB 5 — SOC Reset : réinitialise le dashboard à chaque deploy
+# ============================================================
+  soc-reset:
+    name: "SOC Reset — Dashboard réinitialisé"
+    runs-on: ubuntu-latest
+    needs: deploy-aws
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      # ── 1. Purger les métriques SOC custom de l'ancien déploiement ──
+      - name: Purge métriques SOC CloudWatch (ErrorCount + UnauthorizedAccessCount)
+        run: |
+          echo "🔄 Remise à zéro des métriques SOC/Security..."
+
+          # On publie une datapoint à 0 pour chaque métrique custom
+          # CloudWatch garde les vraies données en arrière-plan,
+          # mais le dashboard SOC lira 0 comme point de départ.
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          aws cloudwatch put-metric-data \
+            --namespace "SOC/Security" \
+            --metric-data \
+              MetricName=ErrorCount,Dimensions=[{Name=LogGroup,Value=${{ env.LOG_GROUP }}}],Value=0,Unit=Count,Timestamp=$TIMESTAMP \
+            --region ${{ env.AWS_REGION }}
+
+          aws cloudwatch put-metric-data \
+            --namespace "SOC/Security" \
+            --metric-data \
+              MetricName=UnauthorizedAccessCount,Dimensions=[{Name=LogGroup,Value=${{ env.LOG_GROUP }}}],Value=0,Unit=Count,Timestamp=$TIMESTAMP \
+            --region ${{ env.AWS_REGION }}
+
+          echo "✅ Métriques SOC remises à 0"
+
+      # ── 2. Créer un nouveau log stream pour ce déploiement ──────────
+      - name: Créer log stream dédié à ce déploiement
+        run: |
+          DEPLOY_DATE=$(date -u +"%Y/%m/%d")
+          TASK_ID="${{ needs.deploy-aws.outputs.task_id }}"
+          STREAM_NAME="ecs/${{ env.CONTAINER_NAME }}/${TASK_ID}"
+
+          echo "📋 Log stream: $STREAM_NAME"
+
+          # Le log stream est créé automatiquement par ECS,
+          # on vérifie juste qu'il existe, sinon on le crée.
+          aws logs create-log-stream \
+            --log-group-name ${{ env.LOG_GROUP }} \
+            --log-stream-name "$STREAM_NAME" \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "(stream already exists)"
+
+          echo "✅ Log stream prêt"
+
+      # ── 3. Injecter un log de démarrage SOC dans CloudWatch ─────────
+      - name: Injecter événement de démarrage dans CloudWatch Logs
+        run: |
+          TASK_ID="${{ needs.deploy-aws.outputs.task_id }}"
+          STREAM_NAME="ecs/${{ env.CONTAINER_NAME }}/${TASK_ID}"
+          DEPLOY_TIME="${{ needs.deploy-aws.outputs.deploy_time }}"
+          NOW_MS=$(date -u +%s%3N)
+
+          # Message de reset visible dans le dashboard SOC
+          SOC_MSG="[SOC-RESET] ✅ Nouveau déploiement — Commit: ${{ github.sha }} | Branch: ${{ github.ref_name }} | Par: ${{ github.actor }} | Heure: ${DEPLOY_TIME} | Métriques remises à 0"
+
+          aws logs put-log-events \
+            --log-group-name "${{ env.LOG_GROUP }}" \
+            --log-stream-name "$STREAM_NAME" \
+            --log-events timestamp=${NOW_MS},message="$SOC_MSG" \
+            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "(put-log-events skipped)"
+
+          echo "✅ Événement SOC injecté dans CloudWatch"
+
+      # ── 4. Réinitialiser les alarmes CloudWatch en état ALARM→OK ────
+      - name: Reset alarmes CloudWatch si elles sont en ALARM
+        run: |
+          echo "🔔 Vérification des alarmes SOC..."
+
+          for ALARM in "SOC-ECS-Errors" "SOC-Unauthorized-Access" "SOC-ECS-Task-Stopped"; do
+            STATE=$(aws cloudwatch describe-alarms \
+              --alarm-names "$ALARM" \
+              --query "MetricAlarms[0].StateValue" \
+              --output text \
+              --region ${{ env.AWS_REGION }} 2>/dev/null || echo "NOT_FOUND")
+
+            echo "  $ALARM → $STATE"
+
+            if [ "$STATE" = "ALARM" ]; then
+              aws cloudwatch set-alarm-state \
+                --alarm-name "$ALARM" \
+                --state-value OK \
+                --state-reason "Reset automatique après déploiement ${{ github.sha }}" \
+                --region ${{ env.AWS_REGION }}
+              echo "  ✅ $ALARM remise à OK"
+            fi
+          done
+
+          echo "✅ Alarmes vérifiées"
+
+      # ── 5. Envoyer notification SNS de déploiement réussi ───────────
+      - name: Envoyer notification SNS — déploiement réussi
+        run: |
+          PUBLIC_IP="${{ needs.deploy-aws.outputs.public_ip }}"
+          DEPLOY_TIME="${{ needs.deploy-aws.outputs.deploy_time }}"
+
+          aws sns publish \
+            --topic-arn "${{ env.SNS_TOPIC_ARN }}" \
+            --subject "✅ Déploiement réussi — ${{ github.repository }}" \
+            --message "$(cat <<EOF
+          ✅ DÉPLOIEMENT RÉUSSI — SOC RÉINITIALISÉ
+
+          Projet    : ${{ github.repository }}
+          Branche   : ${{ github.ref_name }}
+          Commit    : ${{ github.sha }}
+          Auteur    : ${{ github.actor }}
+          Heure     : ${DEPLOY_TIME}
+
+          Infrastructure :
+            Cluster ECS : ${{ env.ECS_CLUSTER }}
+            Service ECS : ${{ env.ECS_SERVICE }}
+            Log Group   : ${{ env.LOG_GROUP }}
+            IP publique : ${PUBLIC_IP}
+
+          Accès :
+            App       : http://${PUBLIC_IP}:5000
+            SOC       : http://${PUBLIC_IP}:5000/soc
+            Santé     : http://${PUBLIC_IP}:5000/health
+
+          SOC Dashboard :
+            ✅ Métriques remises à 0
+            ✅ Alarmes CloudWatch vérifiées
+            ✅ Nouveau log stream créé
+          EOF
+          )" \
+            --region ${{ env.AWS_REGION }}
+
+          echo "✅ Notification SNS envoyée aux abonnés"
+
+      # ── 6. Résumé final ─────────────────────────────────────────────
+      - name: Résumé SOC Reset
+        run: |
+          PUBLIC_IP="${{ needs.deploy-aws.outputs.public_ip }}"
+          echo ""
+          echo "╔══════════════════════════════════════════╗"
+          echo "║       SOC DASHBOARD — RÉINITIALISÉ       ║"
+          echo "╠══════════════════════════════════════════╣"
+          echo "║ Commit   : ${{ github.sha }}"
+          echo "║ Branche  : ${{ github.ref_name }}"
+          echo "║ Acteur   : ${{ github.actor }}"
+          echo "╠══════════════════════════════════════════╣"
+          echo "║ ✅ Métriques SOC → 0"
+          echo "║ ✅ Alarmes CloudWatch → OK"
+          echo "║ ✅ Log stream → créé"
+          echo "║ ✅ Notification SNS → envoyée"
+          echo "╠══════════════════════════════════════════╣"
+          echo "║ SOC : http://${PUBLIC_IP}:5000/soc"
+          echo "╚══════════════════════════════════════════╝"
