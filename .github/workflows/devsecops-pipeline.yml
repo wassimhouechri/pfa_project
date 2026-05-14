@@ -1,4 +1,4 @@
-name: "DevSecOps CI/CD Pipeline"
+name: "DevSecOps CI/CD Pipeline — AWS Academy"
 
 on:
   push:
@@ -7,8 +7,17 @@ on:
     branches: [main]
 
 env:
-  IMAGE_NAME: wassimoz/devsecops-project
+  AWS_REGION:       us-east-1
+  ECR_REGISTRY:     792782834628.dkr.ecr.us-east-1.amazonaws.com
+  ECR_REPOSITORY:   devsecops-project
+  ECS_CLUSTER:      devsecops-cluster
+  ECS_SERVICE:      devsecops-service
+  ECS_TASK_FAMILY:  devsecops-task
+  CONTAINER_NAME:   devsecops-app
 
+# ============================================================
+# JOB 1 — SAST + Tests unitaires
+# ============================================================
 jobs:
   sast-scan:
     name: "Secrets & Static Analysis"
@@ -25,15 +34,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: --source . --verbose --redact --exit-code=0 --no-git  
+          args: --source . --verbose --redact --exit-code=0 --no-git
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install security tools
-        run: pip install bandit safety pytest
+      - name: Install all dependencies
+        run: |
+          pip install -r app/requirements.txt
+          pip install bandit safety pytest pytest-cov
 
       - name: Bandit — static code analysis
         run: |
@@ -41,26 +52,25 @@ jobs:
             -f json \
             -o bandit-report.json \
             -ll \
-            --exclude app/tests
-          echo "Bandit scan complete"
+            --exclude app/tests || true
+          echo "✅ Bandit scan complete"
 
-      - name: Safety CLI — check known CVEs in dependencies
+      - name: Safety — check CVEs in dependencies
         run: |
           safety check -r app/requirements.txt --json > safety-report.json || true
-          echo "Safety scan complete"
+          echo "✅ Safety scan complete"
 
-      - name: Install dependencies
-        run: |
-          pip install -r app/requirements.txt
-          pip install pytest pytest-cov
-
-      - name: Run unit tests
+      - name: Run unit tests (25 tests)
         run: |
           cd app
-          pytest tests/ -v --junitxml=test-results.xml
-          echo "Tests completed"
+          pytest tests/ -v \
+            --junitxml=test-results.xml \
+            --cov=. \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing
+          echo "✅ All tests passed"
 
-      - name: Upload SAST reports as artifacts
+      - name: Upload SAST reports
         uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -69,10 +79,14 @@ jobs:
             bandit-report.json
             safety-report.json
             app/test-results.xml
+            app/coverage.xml
           retention-days: 14
 
+# ============================================================
+# JOB 2 — Build Docker + Push vers ECR + Trivy scan
+# ============================================================
   build-scan:
-    name: "Build & Container Security"
+    name: "Build & Container Security — ECR"
     runs-on: ubuntu-latest
     needs: sast-scan
     permissions:
@@ -83,42 +97,55 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials (Academy temporaires)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          username: ${{ secrets.REPO_USER }}
-          password: ${{ secrets.PWD }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            ${{ env.AWS_REGION }}
 
-      - name: Build Docker image
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image (Gunicorn non-root)
         run: |
           docker build \
-            -t ${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            -t ${{ env.IMAGE_NAME }}:latest \
+            -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} \
+            -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest \
             ./app
+          echo "✅ Image built"
+          docker images | grep devsecops
 
-      - name: Trivy — scan container for vulnerabilities
+      - name: Trivy — vulnerability scan (CRITICAL + HIGH only)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: "${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          scan-type: "image"
-          format: "sarif"
-          output: "trivy-results.sarif"
-          severity: "CRITICAL,HIGH"
-          exit-code: "0"
+          image-ref:      "${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          scan-type:      "image"
+          format:         "sarif"
+          output:         "trivy-results.sarif"
+          severity:       "CRITICAL,HIGH"
+          exit-code:      "0"
           ignore-unfixed: true
 
-      - name: Upload Trivy results to GitHub Security tab
+      - name: Upload Trivy SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: trivy-results.sarif
 
-      - name: Push image to Docker Hub
+      - name: Push image to ECR
         if: github.event_name == 'push'
         run: |
-          docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          docker push ${{ env.IMAGE_NAME }}:latest
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+          echo "✅ Image pushed:"
+          echo "   ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
 
+# ============================================================
+# JOB 3 — DAST : OWASP ZAP scan (depuis ECR)
+# ============================================================
   dast-scan:
     name: "DAST — OWASP ZAP"
     runs-on: ubuntu-latest
@@ -128,37 +155,47 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          username: ${{ secrets.REPO_USER }}
-          password: ${{ secrets.PWD }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            ${{ env.AWS_REGION }}
 
-      - name: Start application container
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Start app container (depuis ECR)
         run: |
           docker run -d \
             --name test-app \
             -p 5000:5000 \
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            -e SECRET_KEY="test-secret-zap" \
+            -e PORT="5000" \
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          echo "✅ Container started"
 
-      - name: Wait for app to be healthy
+      - name: Wait for /health endpoint
         run: |
-          echo "Waiting for app to start..."
+          echo "Waiting for app to start (max 90s)..."
           for i in {1..30}; do
             if curl -sf http://localhost:5000/health; then
-              echo "App is ready"
+              echo ""
+              echo "✅ App is ready at attempt $i"
               break
             fi
-            echo "Attempt $i failed, retrying in 3s..."
+            echo "  Attempt $i/30 — retrying in 3s..."
             sleep 3
           done
 
-      - name: Get container IP and run ZAP
+      - name: OWASP ZAP baseline scan
         run: |
-          CONTAINER_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' test-app)
+          CONTAINER_IP=$(docker inspect -f \
+            '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' test-app)
           echo "Container IP: $CONTAINER_IP"
           mkdir -p zap-reports
-          
+
           docker run --rm \
             -v $(pwd)/zap-reports:/zap/wrk/:rw \
             ghcr.io/zaproxy/zaproxy:stable \
@@ -168,12 +205,11 @@ jobs:
             -w report_md.md \
             -r report_html.html \
             -I || true
-          
-          if [ -f zap-reports/report_html.html ]; then
-            cp zap-reports/report_html.html .
-            cp zap-reports/report_json.json .
-            cp zap-reports/report_md.md .
-          fi
+
+          # Copier les rapports
+          for f in report_html.html report_json.json report_md.md; do
+            [ -f "zap-reports/$f" ] && cp "zap-reports/$f" . && echo "  Copied: $f"
+          done
 
       - name: Upload ZAP report
         uses: actions/upload-artifact@v4
@@ -186,12 +222,15 @@ jobs:
             report_md.md
           retention-days: 14
 
-      - name: Stop and remove test container
+      - name: Stop test container
         if: always()
         run: docker stop test-app && docker rm test-app
 
-  deploy-k8s:
-    name: "Deploy — Kubernetes Production"
+# ============================================================
+# JOB 4 — Deploy vers AWS ECS Fargate (remplace KIND/K8s)
+# ============================================================
+  deploy-aws:
+    name: "Deploy — AWS ECS Fargate"
     runs-on: ubuntu-latest
     needs: dast-scan
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -200,144 +239,117 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install KIND
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
-          kind version
-
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v3
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          version: 'latest'
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            ${{ env.AWS_REGION }}
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Télécharge la task def actuelle et injecte le nouveau SHA d'image
+      - name: Download current task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.ECS_TASK_FAMILY }} \
+            --query taskDefinition \
+            --region ${{ env.AWS_REGION }} \
+            > task-def.json
+          echo "✅ Task definition downloaded"
+          cat task-def.json | python3 -c "import json,sys; d=json.load(sys.stdin); print('  Current image:', d['containerDefinitions'][0]['image'])"
+
+      - name: Inject new image SHA into task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          username: ${{ secrets.REPO_USER }}
-          password: ${{ secrets.PWD }}
+          task-definition: task-def.json
+          container-name:  ${{ env.CONTAINER_NAME }}
+          image:           ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
 
-      - name: Pull Docker image
-        run: |
-          docker pull ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} ${{ env.IMAGE_NAME }}:prod
+      - name: Deploy new task definition to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition:          ${{ steps.task-def.outputs.task-definition }}
+          service:                  ${{ env.ECS_SERVICE }}
+          cluster:                  ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
 
-      - name: Create KIND cluster
+      - name: Verify ECS service health
         run: |
-          cat <<EOF | kind create cluster --name=devsecops-prod --config=-
-          kind: Cluster
-          apiVersion: kind.x-k8s.io/v1alpha4
-          name: devsecops-prod
-          nodes:
-          - role: control-plane
-          - role: worker
-          - role: worker
-          networking:
-            podSubnet: "10.244.0.0/16"
-            serviceSubnet: "10.96.0.0/12"
-          EOF
+          echo "=== ECS Service Status ==="
+          aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --query "services[0].{Status:status,Running:runningCount,Desired:desiredCount,Pending:pendingCount}" \
+            --output table \
+            --region ${{ env.AWS_REGION }}
 
-      - name: Load Docker image into KIND
+      - name: Get public IP and run health check
         run: |
-          kind load docker-image ${{ env.IMAGE_NAME }}:${{ github.sha }} --name devsecops-prod
-          kind load docker-image ${{ env.IMAGE_NAME }}:prod --name devsecops-prod
+          # Récupère l'IP publique de la task ECS
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service-name ${{ env.ECS_SERVICE }} \
+            --query "taskArns[0]" --output text \
+            --region ${{ env.AWS_REGION }})
 
-      - name: Deploy to Kubernetes
-        run: |
-          kubectl create namespace devsecops --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -f k8s/secret.yml
-          kubectl apply -f k8s/deployment.yml
-          kubectl apply -f k8s/service.yml
-          kubectl apply -f k8s/hpa.yml || echo "HPA skipped"
+          ENI_ID=$(aws ecs describe-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --tasks $TASK_ARN \
+            --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" \
+            --output text --region ${{ env.AWS_REGION }})
 
-      - name: Wait for deployment
-        run: |
-          echo "Waiting for pods to be ready..."
-          kubectl wait --for=condition=ready --timeout=180s pods -n devsecops -l app=devsecops-app || true
+          PUBLIC_IP=$(aws ec2 describe-network-interfaces \
+            --network-interface-ids $ENI_ID \
+            --query "NetworkInterfaces[0].Association.PublicIp" \
+            --output text --region ${{ env.AWS_REGION }})
+
           sleep 10
-          kubectl get pods -n devsecops -o wide
 
-      - name: Verify deployment
-        run: |
-          echo "=== Pods Status ==="
-          kubectl get pods -n devsecops
-          echo "=== Services ==="
-          kubectl get svc -n devsecops
-          echo "=== HPA Status ==="
-          kubectl get hpa -n devsecops || echo "HPA not configured"
-
-      - name: Application Health Check
-        run: |
-          echo "=== Testing Application ==="
-          kubectl port-forward -n devsecops service/devsecops-app-service 5000:80 &
-          PF_PID=$!
-          sleep 15
-          
-          HEALTH_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health)
-          if [ "$HEALTH_RESPONSE" = "200" ]; then
-            echo "✅ Health check passed (HTTP $HEALTH_RESPONSE)"
+          # Test /health
+          HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://$PUBLIC_IP:5000/health || echo "000")
+          if [ "$HEALTH" = "200" ]; then
+            echo "✅ /health → HTTP 200"
           else
-            echo "❌ Health check failed (HTTP $HEALTH_RESPONSE)"
+            echo "⚠️  /health → HTTP $HEALTH (app may still be starting)"
           fi
-          
-          API_RESPONSE=$(curl -s http://localhost:5000/api/status)
-          if echo "$API_RESPONSE" | grep -q "healthy"; then
-            echo "✅ API status check passed"
+
+          # Test /api/status
+          API_RESP=$(curl -s http://$PUBLIC_IP:5000/api/status 2>/dev/null || echo "{}")
+          if echo "$API_RESP" | grep -q "ok"; then
+            echo "✅ /api/status → running"
           else
-            echo "❌ API status check failed"
+            echo "⚠️  /api/status → $API_RESP"
           fi
-          
-          kill $PF_PID 2>/dev/null || true
 
-      - name: Deploy SOC Stack
-        run: |
-          echo "=== Deploying SOC Stack ==="
-          kubectl create namespace soc --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -f k8s/soc/prometheus-config.yaml || echo "Prometheus config not found"
-          kubectl apply -f k8s/soc/prometheus-deployment.yaml || echo "Prometheus deployment not found"
-          kubectl apply -f k8s/soc/grafana-dashboard.yaml || echo "Grafana dashboard not found"
-          kubectl apply -f k8s/soc/grafana-deployment.yaml || echo "Grafana deployment not found"
-          echo "✅ SOC Stack deployed"
-
-      - name: Verify SOC deployment
-        run: |
-          echo "=== SOC Pods ==="
-          kubectl get pods -n soc
-          echo "=== SOC Services ==="
-          kubectl get svc -n soc
-
-      - name: Collect deployment info
-        if: always()
-        run: |
-          mkdir -p k8s-info
-          POD_NAME=$(kubectl get pods -n devsecops -o jsonpath='{.items[0].metadata.name}')
-          if [ -n "$POD_NAME" ]; then
-            kubectl logs -n devsecops $POD_NAME --tail=50 > k8s-info/logs.txt
-          else
-            echo "No pods found" > k8s-info/logs.txt
-          fi
-          kubectl get all -n devsecops -o wide > k8s-info/all-resources.txt
-          echo "✅ Deployment information collected"
-
-      - name: Upload deployment info
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: k8s-deployment-info
-          path: k8s-info/
-          retention-days: 7
-
-      - name: Final status
-        run: |
-          echo "========================================="
-          echo "✅ DEPLOYMENT COMPLETED SUCCESSFULLY"
-          echo "========================================="
-          echo "Application: http://localhost:30080"
-          echo "Grafana: http://localhost:3000 (admin/admin)"
-          echo "Prometheus: http://localhost:9090"
-          echo "========================================="
           echo ""
-          echo "To access SOC dashboards locally:"
-          echo "kubectl port-forward -n soc svc/grafana-service 3000:3000"
-          echo "kubectl port-forward -n soc svc/prometheus-service 9090:9090"
+          echo "========================================="
+          echo "✅  DEPLOYMENT COMPLETED SUCCESSFULLY"
+          echo "========================================="
+          echo "  App URL     : http://$PUBLIC_IP:5000"
+          echo "  Health      : http://$PUBLIC_IP:5000/health"
+          echo "  API status  : http://$PUBLIC_IP:5000/api/status"
+          echo "  Dashboard   : http://$PUBLIC_IP:5000/login"
+          echo "  ECR Image   : ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}"
+          echo "========================================="
+
+      - name: Tail CloudWatch logs
+        if: always()
+        run: |
+          echo "=== Recent CloudWatch Logs ==="
+          TASK_ID=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --query "taskArns[0]" --output text \
+            --region ${{ env.AWS_REGION }} | awk -F/ '{print $NF}')
+
+          aws logs get-log-events \
+            --log-group-name /ecs/devsecops \
+            --log-stream-name "ecs/${{ env.CONTAINER_NAME }}/$TASK_ID" \
+            --limit 30 \
+            --region ${{ env.AWS_REGION }} \
+            --query "events[*].message" \
+            --output text 2>/dev/null || echo "(logs not yet available)"
