@@ -194,10 +194,14 @@ jobs:
           CONTAINER_IP=$(docker inspect -f \
             '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' test-app)
           echo "Container IP: $CONTAINER_IP"
+    
+    
           mkdir -p zap-reports
-
+          chmod 777 zap-reports  # Allow container user to write
+    
           docker run --rm \
             -v $(pwd)/zap-reports:/zap/wrk/:rw \
+            --user root \  # Add this line to run as root
             ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
             -t http://$CONTAINER_IP:5000 \
@@ -205,11 +209,6 @@ jobs:
             -w report_md.md \
             -r report_html.html \
             -I || true
-
-          # Copier les rapports
-          for f in report_html.html report_json.json report_md.md; do
-            [ -f "zap-reports/$f" ] && cp "zap-reports/$f" . && echo "  Copied: $f"
-          done
 
       - name: Upload ZAP report
         uses: actions/upload-artifact@v4
