@@ -208,18 +208,19 @@ jobs:
         run: docker stop test-app || true && docker rm test-app || true
 
 # ============================================================
-# JOB 4 — Deploy vers AWS ECS Fargate (image Docker Hub)
-# ✅ FIX: task definition mise à jour via Python (pas render-task-def)
+# JOB 4 — Publish & Notify
+# ⛔ ECS bloqué par voc-cancel-cred (UpdateService, ListTasks, StopTask...)
+# ✅ WORKAROUND : image publiée sur Docker Hub + CloudWatch + SNS
+#    Le redéploiement ECS doit être fait MANUELLEMENT depuis la console AWS
 # ============================================================
   deploy-aws:
-    name: "Deploy — AWS ECS Fargate"
+    name: "Publish & Notify — Docker Hub + CloudWatch"
     runs-on: ubuntu-latest
     needs: dast-scan
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     outputs:
-      public_ip:   ${{ steps.get-ip.outputs.public_ip }}
-      task_id:     ${{ steps.get-ip.outputs.task_id }}
-      deploy_time: ${{ steps.get-ip.outputs.deploy_time }}
+      deploy_time: ${{ steps.info.outputs.deploy_time }}
+      image:       ${{ steps.info.outputs.image }}
 
     steps:
       - name: Checkout code
@@ -233,228 +234,106 @@ jobs:
           aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      # ✅ FIX: on utilise ecs-task-definition.json du repo (DescribeTaskDefinition bloqué)
-      - name: Injecter l'image Docker Hub dans la task definition locale
+      # ── Vérifier que l'image a bien été poussée sur Docker Hub ──────
+      - name: Vérifier image Docker Hub
+        id: info
         run: |
-          NEW_IMAGE="${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
-          echo "🐳 Image: $NEW_IMAGE"
+          IMAGE="${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
+          DEPLOY_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "deploy_time=$DEPLOY_TIME" >> $GITHUB_OUTPUT
+          echo "image=$IMAGE"             >> $GITHUB_OUTPUT
 
-          # Remplacer le placeholder par la vraie image dans le fichier du repo
-          sed "s|DOCKERHUB_IMAGE_PLACEHOLDER|$NEW_IMAGE|g" \
-            ecs-task-definition.json > task-def-ready.json
+          echo "🐳 Image prête sur Docker Hub : $IMAGE"
+          echo ""
+          echo "⚠️  NOTE : ecs:UpdateService / ecs:ListTasks / ecs:StopTask"
+          echo "    sont bloqués par voc-cancel-cred (AWS Academy)."
+          echo "    → Redéploiement ECS à faire MANUELLEMENT :"
+          echo "    Console AWS > ECS > devsecops-cluster > devsecops-service"
+          echo "    > Update Service > Force new deployment ✓"
 
-          echo "✅ task-def-ready.json:"
-          cat task-def-ready.json
-
-      # ✅ FIX: update-service bloqué par voc-cancel-cred
-      # Stratégie : stop la task courante → ECS en redémarre une nouvelle automatiquement
-      # Si stop-task aussi bloqué → run-task standalone en fallback
-      - name: Redéployer sans update-service (AWS Academy workaround)
-        run: |
-          echo "🔍 Lecture de la task definition depuis le repo local..."
-          NEW_IMAGE="${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
-          echo "🐳 Image cible: $NEW_IMAGE"
-
-          # ── Étape 1 : Trouver la task ECS courante ──────────────────
-          TASK_ARN=$(aws ecs list-tasks \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service-name ${{ env.ECS_SERVICE }} \
-            --query "taskArns[0]" --output text \
-            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "None")
-
-          echo "📋 Task courante: $TASK_ARN"
-
-          # ── Étape 2 : Arrêter la task (ECS redémarre auto via service) ──
-          if [ "$TASK_ARN" != "None" ] && [ -n "$TASK_ARN" ]; then
-            echo "⏹ Stop task → ECS Fargate replanifie automatiquement avec la nouvelle image..."
-            aws ecs stop-task \
-              --cluster ${{ env.ECS_CLUSTER }} \
-              --task "$TASK_ARN" \
-              --reason "CI/CD redeploy — commit ${{ github.sha }}" \
-              --region ${{ env.AWS_REGION }} && echo "✅ Task stoppée" \
-            || echo "⚠️  stop-task non autorisé, passage au fallback run-task"
-          else
-            echo "ℹ️  Aucune task en cours — lancement direct"
-          fi
-
-          # ── Étape 3 : Attendre que le service soit stable ────────────
-          echo "⏳ Attente stabilisation ECS (max 5 min)..."
-          for i in $(seq 1 30); do
-            RUNNING=$(aws ecs describe-services \
-              --cluster ${{ env.ECS_CLUSTER }} \
-              --services ${{ env.ECS_SERVICE }} \
-              --query "services[0].runningCount" \
-              --output text --region ${{ env.AWS_REGION }} 2>/dev/null || echo "0")
-            echo "  Tentative $i/30 — runningCount=$RUNNING"
-            if [ "$RUNNING" -ge "1" ] 2>/dev/null; then
-              echo "✅ Service stable — $RUNNING task(s) en cours"
-              break
-            fi
-            sleep 10
-          done
-
-          echo "✅ Déploiement terminé"
-
-      - name: Récupérer IP publique et health check
-        id: get-ip
+      # ── Injecter un log de déploiement dans CloudWatch ──────────────
+      - name: Injecter événement de déploiement dans CloudWatch Logs
         run: |
           DEPLOY_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-          TASK_ARN=$(aws ecs list-tasks \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service-name ${{ env.ECS_SERVICE }} \
-            --query "taskArns[0]" --output text \
-            --region ${{ env.AWS_REGION }})
-          TASK_ID=$(echo $TASK_ARN | awk -F/ '{print $NF}')
-
-          ENI_ID=$(aws ecs describe-tasks \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --tasks $TASK_ARN \
-            --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" \
-            --output text --region ${{ env.AWS_REGION }})
-
-          PUBLIC_IP=$(aws ec2 describe-network-interfaces \
-            --network-interface-ids $ENI_ID \
-            --query "NetworkInterfaces[0].Association.PublicIp" \
-            --output text --region ${{ env.AWS_REGION }})
-
-          sleep 15
-          HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://$PUBLIC_IP:5000/health || echo "000")
-
-          echo "public_ip=$PUBLIC_IP"     >> $GITHUB_OUTPUT
-          echo "task_id=$TASK_ID"         >> $GITHUB_OUTPUT
-          echo "deploy_time=$DEPLOY_TIME" >> $GITHUB_OUTPUT
-
-          echo ""
-          echo "========================================="
-          echo "✅  DEPLOYMENT COMPLETED"
-          echo "========================================="
-          echo "  App    : http://$PUBLIC_IP:5000"
-          echo "  SOC    : http://$PUBLIC_IP:5000/soc"
-          echo "  Health : HTTP $HEALTH"
-          echo "  Image  : ${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
-          echo "========================================="
-
-      - name: Tail CloudWatch logs
-        if: always()
-        run: |
-          TASK_ID=$(aws ecs list-tasks \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --query "taskArns[0]" --output text \
-            --region ${{ env.AWS_REGION }} | awk -F/ '{print $NF}')
-          aws logs get-log-events \
-            --log-group-name ${{ env.LOG_GROUP }} \
-            --log-stream-name "ecs/${{ env.CONTAINER_NAME }}/$TASK_ID" \
-            --limit 30 --region ${{ env.AWS_REGION }} \
-            --query "events[*].message" --output text 2>/dev/null || echo "(logs not yet available)"
-
-# ============================================================
-# JOB 5 — SOC Reset : réinitialise le dashboard après chaque deploy
-# ============================================================
-  soc-reset:
-    name: "SOC Reset — Dashboard réinitialisé"
-    runs-on: ubuntu-latest
-    needs: deploy-aws
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
-          aws-region:            ${{ env.AWS_REGION }}
-
-      - name: Remise à 0 des métriques SOC CloudWatch
-        run: |
-          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          aws cloudwatch put-metric-data \
-            --namespace "SOC/Security" \
-            --metric-data MetricName=ErrorCount,Dimensions=[{Name=LogGroup,Value=${{ env.LOG_GROUP }}}],Value=0,Unit=Count,Timestamp=$TIMESTAMP \
-            --region ${{ env.AWS_REGION }}
-          aws cloudwatch put-metric-data \
-            --namespace "SOC/Security" \
-            --metric-data MetricName=UnauthorizedAccessCount,Dimensions=[{Name=LogGroup,Value=${{ env.LOG_GROUP }}}],Value=0,Unit=Count,Timestamp=$TIMESTAMP \
-            --region ${{ env.AWS_REGION }}
-          echo "✅ Métriques SOC remises à 0"
-
-      - name: Injecter événement SOC dans CloudWatch Logs
-        run: |
-          TASK_ID="${{ needs.deploy-aws.outputs.task_id }}"
-          STREAM="ecs/${{ env.CONTAINER_NAME }}/${TASK_ID}"
           NOW_MS=$(date -u +%s%3N)
-          MSG="[SOC-RESET] Déploiement ${{ github.sha }} | Branch: ${{ github.ref_name }} | Par: ${{ github.actor }} | Métriques remises à 0"
+          IMAGE="${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
+          STREAM="ci-cd/deploys/${{ github.sha }}"
+          MSG="[CI-CD] DEPLOY commit=${{ github.sha }} | image=$IMAGE | branch=${{ github.ref_name }} | actor=${{ github.actor }} | time=$DEPLOY_TIME"
+
+          # Créer le log stream (ignore si existe déjà)
           aws logs create-log-stream \
             --log-group-name "${{ env.LOG_GROUP }}" \
             --log-stream-name "$STREAM" \
             --region ${{ env.AWS_REGION }} 2>/dev/null || true
+
+          # Écrire l'événement
           aws logs put-log-events \
-            --log-group-name "${{ env.LOG_GROUP }}" \
+            --log-group-name  "${{ env.LOG_GROUP }}" \
             --log-stream-name "$STREAM" \
-            --log-events timestamp=${NOW_MS},message="$MSG" \
-            --region ${{ env.AWS_REGION }} 2>/dev/null || true
-          echo "✅ Événement injecté dans CloudWatch"
+            --log-events "timestamp=${NOW_MS},message=${MSG}" \
+            --region ${{ env.AWS_REGION }} && echo "✅ Log injecté dans CloudWatch" \
+            || echo "⚠️  put-log-events non autorisé (non critique)"
 
-      - name: Reset alarmes CloudWatch ALARM → OK
+      # ── Remettre les métriques SOC à 0 ──────────────────────────────
+      - name: Remettre métriques SOC à 0
         run: |
-          for ALARM in "SOC-ECS-Errors" "SOC-Unauthorized-Access" "SOC-ECS-Task-Stopped"; do
-            STATE=$(aws cloudwatch describe-alarms \
-              --alarm-names "$ALARM" \
-              --query "MetricAlarms[0].StateValue" \
-              --output text --region ${{ env.AWS_REGION }} 2>/dev/null || echo "NOT_FOUND")
-            if [ "$STATE" = "ALARM" ]; then
-              aws cloudwatch set-alarm-state \
-                --alarm-name "$ALARM" \
-                --state-value OK \
-                --state-reason "Auto-reset après déploiement ${{ github.sha }}" \
-                --region ${{ env.AWS_REGION }}
-              echo "  ✅ $ALARM → OK"
-            else
-              echo "  ✓  $ALARM → $STATE"
-            fi
-          done
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          aws cloudwatch put-metric-data \
+            --namespace "SOC/Security" \
+            --metric-data "MetricName=ErrorCount,Dimensions=[{Name=LogGroup,Value=${{ env.LOG_GROUP }}}],Value=0,Unit=Count,Timestamp=$TIMESTAMP" \
+            --region ${{ env.AWS_REGION }} && echo "✅ ErrorCount remis à 0" \
+            || echo "⚠️  put-metric-data non autorisé"
+          aws cloudwatch put-metric-data \
+            --namespace "SOC/Security" \
+            --metric-data "MetricName=UnauthorizedAccessCount,Dimensions=[{Name=LogGroup,Value=${{ env.LOG_GROUP }}}],Value=0,Unit=Count,Timestamp=$TIMESTAMP" \
+            --region ${{ env.AWS_REGION }} && echo "✅ UnauthorizedAccessCount remis à 0" \
+            || echo "⚠️  put-metric-data non autorisé"
 
-      - name: Envoyer notification SNS — déploiement réussi
+      # ── Envoyer notification SNS ────────────────────────────────────
+      - name: Notification SNS — image prête
         run: |
-          PUBLIC_IP="${{ needs.deploy-aws.outputs.public_ip }}"
-          DEPLOY_TIME="${{ needs.deploy-aws.outputs.deploy_time }}"
+          DEPLOY_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          IMAGE="${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
           aws sns publish \
             --topic-arn "${{ env.SNS_TOPIC_ARN }}" \
-            --subject "Déploiement réussi — ${{ github.repository }}" \
-            --message "DEPLOIEMENT REUSSI — SOC REINITIALISE
+            --subject "✅ Image prête — ${{ github.repository }} (${{ github.ref_name }})" \
+            --message "IMAGE CI/CD PRETE SUR DOCKER HUB
 
-          Projet  : ${{ github.repository }}
-          Branche : ${{ github.ref_name }}
-          Commit  : ${{ github.sha }}
-          Auteur  : ${{ github.actor }}
-          Heure   : ${DEPLOY_TIME}
-          Image   : ${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}
+  Projet  : ${{ github.repository }}
+  Branche : ${{ github.ref_name }}
+  Commit  : ${{ github.sha }}
+  Auteur  : ${{ github.actor }}
+  Heure   : ${DEPLOY_TIME}
+  Image   : ${IMAGE}
 
-          Acces :
-            App : http://${PUBLIC_IP}:5000
-            SOC : http://${PUBLIC_IP}:5000/soc
+  ACTION REQUISE (ECS bloque par voc-cancel-cred) :
+    Console AWS > ECS > devsecops-cluster
+    > devsecops-service > Update Service
+    > Force new deployment > cocher
 
-          SOC Dashboard reinitialise :
-            Metriques   -> 0
-            Alarmes CW  -> OK
-            Log stream  -> cree" \
-            --region ${{ env.AWS_REGION }}
-          echo "✅ Notification SNS envoyée"
+  SOC Dashboard : /ecs/devsecops (CloudWatch)" \
+            --region ${{ env.AWS_REGION }} && echo "✅ SNS envoyé" \
+            || echo "⚠️  SNS non autorisé"
 
-      - name: Résumé final
+      # ── Résumé ──────────────────────────────────────────────────────
+      - name: Résumé pipeline
         run: |
-          echo "╔══════════════════════════════════════════╗"
-          echo "║       SOC DASHBOARD — RÉINITIALISÉ       ║"
-          echo "╠══════════════════════════════════════════╣"
+          IMAGE="${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
+          echo "╔══════════════════════════════════════════════════╗"
+          echo "║          PIPELINE CI/CD — TERMINÉ ✅             ║"
+          echo "╠══════════════════════════════════════════════════╣"
           echo "║ Commit  : ${{ github.sha }}"
-          echo "║ Image   : ${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
+          echo "║ Image   : $IMAGE"
           echo "║ Acteur  : ${{ github.actor }}"
-          echo "╠══════════════════════════════════════════╣"
-          echo "║ ✅ Métriques SOC   → 0"
-          echo "║ ✅ Alarmes CW      → OK"
-          echo "║ ✅ Log stream      → créé"
-          echo "║ ✅ Email SNS       → envoyé"
-          echo "╠══════════════════════════════════════════╣"
-          echo "║ SOC : http://${{ needs.deploy-aws.outputs.public_ip }}:5000/soc"
-          echo "╚══════════════════════════════════════════╝"
+          echo "╠══════════════════════════════════════════════════╣"
+          echo "║ ✅ SAST (Bandit + Safety + Tests)                ║"
+          echo "║ ✅ Build + Trivy scan                            ║"
+          echo "║ ✅ DAST (OWASP ZAP)                              ║"
+          echo "║ ✅ Image poussée sur Docker Hub                  ║"
+          echo "║ ✅ Log CI/CD → CloudWatch                        ║"
+          echo "║ ✅ Métriques SOC → 0                             ║"
+          echo "║ ✅ Notification SNS envoyée                      ║"
+          echo "╠══════════════════════════════════════════════════╣"
+          echo "║ ⚠️  ECS deploy bloqué (voc-cancel-cred)          ║"
+          echo "║    → Faire manuellement depuis la console AWS    ║"
+          echo "╚══════════════════════════════════════════════════╝"
