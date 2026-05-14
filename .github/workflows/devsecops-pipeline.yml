@@ -240,7 +240,7 @@ jobs:
           echo "🐳 Image: $NEW_IMAGE"
 
           # Remplacer le placeholder par la vraie image dans le fichier du repo
-          sed "s|DOCKERHUB_IMAGE_PLACEHOLDER|$NEW_IMAGE|g" \
+          sed "s|wassimoz/devsecops-project:abc123sha|$NEW_IMAGE|g" \
             ecs-task-definition.json > task-def-ready.json
 
           echo "✅ task-def-ready.json:"
