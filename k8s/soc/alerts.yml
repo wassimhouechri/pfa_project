@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: soc-alerts
+  namespace: soc
+
+spec:
+  groups:
+  - name: falco-alerts
+    rules:
+    - alert: FalcoAttackDetected
+      expr: rate(falcosidekick_events_total[1m]) > 0
+      for: 10s
+      labels:
+        severity: critical
+      annotations:
+        summary: "Falco detected suspicious activity"
