@@ -286,6 +286,86 @@ def soc_test_alert():
         return jsonify({"ok": False, "error": f"AWS ClientError: {code}"}), 500
     except Exception as ex:
         return jsonify({"ok": False, "error": str(ex)}), 500
+@app.route("/api/soc/attack-alert", methods=["POST"])
+@login_required
+def soc_attack_alert():
+    """
+    Envoie une alerte email via SNS lorsqu'une attaque est détectée.
+    Appelé automatiquement par le moteur d'intelligence du SOC Dashboard.
+    """
+    try:
+        body = request.get_json(force=True) or {}
+        attack_name    = body.get("attack_name", "Attaque Inconnue")
+        severity       = body.get("severity", "unknown").upper()
+        confidence     = body.get("confidence", 0)
+        description    = body.get("description", "Aucune description disponible.")
+        recommendation = body.get("recommendation", "Analyser les logs manuellement.")
+        operator       = session.get("username", "inconnu")
+        now_str        = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+ 
+        # Icône selon la sévérité
+        severity_icons = {
+            "CRITICAL": "🔴",
+            "HIGH":     "🟠",
+            "MEDIUM":   "🟡",
+            "LOW":      "🟢",
+        }
+        icon = severity_icons.get(severity, "⚠️")
+ 
+        # Corps du mail SNS
+        message = (
+            f"{'='*60}\n"
+            f"🚨  ALERTE SOC — ATTAQUE DÉTECTÉE\n"
+            f"{'='*60}\n\n"
+            f"{icon}  Type d'attaque : {attack_name}\n"
+            f"⚡  Sévérité      : {severity}\n"
+            f"🎯  Confiance     : {confidence}%\n"
+            f"🕐  Horodatage    : {now_str}\n"
+            f"👤  Opérateur     : {operator}\n"
+            f"🖥️  Cluster       : {ECS_CLUSTER}\n"
+            f"⚙️  Service       : {ECS_SERVICE}\n\n"
+            f"{'─'*60}\n"
+            f"📋  DESCRIPTION\n"
+            f"{'─'*60}\n"
+            f"{description}\n\n"
+            f"{'─'*60}\n"
+            f"🛡️  RECOMMANDATION\n"
+            f"{'─'*60}\n"
+            f"{recommendation}\n\n"
+            f"{'='*60}\n"
+            f"DevSecOps SOC Dashboard — Action immédiate requise\n"
+            f"{'='*60}\n"
+        )
+ 
+        subject = f"🚨 SOC ALERT [{severity}] — {attack_name}"
+ 
+        sns = _aws("sns")
+        sns.publish(
+            TopicArn=SNS_TOPIC_ARN,
+            Subject=subject,
+            Message=message,
+        )
+ 
+        # Log interne de l'alerte envoyée
+        app.logger.warning(
+            f"[SOC ATTACK ALERT] type={attack_name} severity={severity} "
+            f"confidence={confidence}% operator={operator}"
+        )
+ 
+        return jsonify({
+            "ok": True,
+            "message": f"Alerte SNS envoyée pour: {attack_name}",
+            "severity": severity,
+            "attack_name": attack_name,
+        })
+ 
+    except NoCredentialsError:
+        return jsonify({"ok": False, "error": "Pas de credentials AWS (IAM Role manquant)"}), 403
+    except ClientError as ex:
+        code = ex.response["Error"]["Code"]
+        return jsonify({"ok": False, "error": f"AWS ClientError: {code}"}), 500
+    except Exception as ex:
+        return jsonify({"ok": False, "error": str(ex)}), 500
 
 
 # ── Lancement ────────────────────────────────────────

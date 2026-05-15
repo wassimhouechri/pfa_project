@@ -672,6 +672,301 @@
     font-size: 12px;
     margin-bottom: 24px;
   }
+
+  /* ── ATTACK INTELLIGENCE PANEL ── */
+  .attack-intel-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 20px;
+    position: relative;
+  }
+
+  .attack-intel-panel.has-attack {
+    border-color: rgba(255,51,102,0.6);
+    box-shadow: 0 0 30px rgba(255,51,102,0.12);
+  }
+
+  .attack-intel-panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--danger), var(--warn), var(--danger));
+    background-size: 200% 100%;
+    animation: slideGrad 3s linear infinite;
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+
+  .attack-intel-panel.has-attack::before { opacity: 1; }
+
+  @keyframes slideGrad {
+    0% { background-position: 0% 0%; }
+    100% { background-position: 200% 0%; }
+  }
+
+  .attack-intel-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0;
+  }
+
+  @media (max-width: 900px) {
+    .attack-intel-grid { grid-template-columns: 1fr; }
+  }
+
+  .attack-intel-section {
+    padding: 16px;
+    border-right: 1px solid var(--border);
+  }
+
+  .attack-intel-section:last-child { border-right: none; }
+
+  .attack-intel-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    color: var(--textdim);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .attack-type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-family: 'Orbitron', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border: 1px solid;
+    margin-bottom: 8px;
+    transition: all 0.4s;
+  }
+
+  .attack-type-badge.none {
+    color: var(--green);
+    border-color: rgba(0,255,136,0.3);
+    background: rgba(0,255,136,0.05);
+  }
+
+  .attack-type-badge.active {
+    color: var(--danger);
+    border-color: rgba(255,51,102,0.5);
+    background: rgba(255,51,102,0.1);
+    animation: badgePulse 1s ease-in-out infinite;
+  }
+
+  @keyframes badgePulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(255,51,102,0.3); }
+    50% { box-shadow: 0 0 15px 4px rgba(255,51,102,0.2); }
+  }
+
+  .attack-type-desc {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--textdim);
+    line-height: 1.6;
+  }
+
+  .attack-severity-bar {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .severity-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--textdim);
+    width: 70px;
+    flex-shrink: 0;
+  }
+
+  .severity-track {
+    flex: 1;
+    height: 4px;
+    background: var(--bg3);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .severity-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.8s ease;
+  }
+
+  .severity-fill.low    { background: var(--green); width: 25%; }
+  .severity-fill.medium { background: var(--warn);  width: 55%; }
+  .severity-fill.high   { background: var(--danger); width: 85%; }
+  .severity-fill.critical { background: var(--danger); width: 100%; animation: critFlash 0.6s ease-in-out infinite; }
+
+  @keyframes critFlash { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+  .severity-val {
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    width: 50px;
+    text-align: right;
+  }
+
+  .severity-val.low     { color: var(--green); }
+  .severity-val.medium  { color: var(--warn); }
+  .severity-val.high    { color: var(--danger); }
+  .severity-val.critical { color: var(--danger); }
+
+  .attack-history-list {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .attack-history-list::-webkit-scrollbar { width: 3px; }
+  .attack-history-list::-webkit-scrollbar-thumb { background: var(--muted); }
+
+  .attack-hist-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(14,58,82,0.4);
+    animation: logFadeIn 0.3s ease;
+  }
+
+  .attack-hist-item:last-child { border-bottom: none; }
+
+  .attack-hist-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .attack-hist-dot.critical { background: var(--danger); box-shadow: 0 0 4px var(--danger); }
+  .attack-hist-dot.high     { background: var(--danger); }
+  .attack-hist-dot.medium   { background: var(--warn); }
+  .attack-hist-dot.low      { background: var(--green); }
+
+  .attack-hist-info { flex: 1; min-width: 0; }
+
+  .attack-hist-type {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .attack-hist-time {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--textdim);
+  }
+
+  .attack-hist-sev {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .attack-hist-sev.critical { background: rgba(255,51,102,0.2); color: var(--danger); border: 1px solid rgba(255,51,102,0.3); }
+  .attack-hist-sev.high     { background: rgba(255,51,102,0.1); color: var(--danger); border: 1px solid rgba(255,51,102,0.2); }
+  .attack-hist-sev.medium   { background: rgba(255,170,0,0.1);  color: var(--warn);   border: 1px solid rgba(255,170,0,0.2); }
+  .attack-hist-sev.low      { background: rgba(0,255,136,0.08); color: var(--green);  border: 1px solid rgba(0,255,136,0.2); }
+
+  .mail-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    border: 1px solid var(--border);
+    background: rgba(0,0,0,0.2);
+    margin-bottom: 10px;
+    transition: all 0.4s;
+  }
+
+  .mail-status.sending {
+    border-color: rgba(255,170,0,0.4);
+    background: rgba(255,170,0,0.05);
+    color: var(--warn);
+  }
+
+  .mail-status.sent {
+    border-color: rgba(0,255,136,0.4);
+    background: rgba(0,255,136,0.05);
+    color: var(--green);
+  }
+
+  .mail-status.idle {
+    color: var(--textdim);
+  }
+
+  .mail-icon { font-size: 16px; }
+
+  .notif-counter {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--textdim);
+    margin-bottom: 8px;
+  }
+
+  .notif-counter span:last-child {
+    font-family: 'Orbitron', monospace;
+    font-size: 18px;
+    color: var(--accent);
+  }
+
+  .btn-send-alert {
+    width: 100%;
+    padding: 9px;
+    border-radius: 4px;
+    border: 1px solid var(--danger);
+    background: rgba(255,51,102,0.08);
+    color: var(--danger);
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 8px;
+  }
+
+  .btn-send-alert:hover:not(:disabled) {
+    background: rgba(255,51,102,0.2);
+    box-shadow: 0 0 15px rgba(255,51,102,0.2);
+  }
+
+  .btn-send-alert:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .attack-counter-badge {
+    background: rgba(255,51,102,0.15);
+    border: 1px solid rgba(255,51,102,0.3);
+    color: var(--danger);
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    margin-left: 6px;
+  }
 </style>
 </head>
 <body>
@@ -798,6 +1093,83 @@
       </div>
       <div class="kpi-value kpi-loading" id="kpiAlarmsVal">—</div>
       <div class="kpi-sub" id="kpiAlarmsSub">En attente de données</div>
+    </div>
+  </div>
+
+  <!-- ATTACK INTELLIGENCE PANEL -->
+  <div class="attack-intel-panel" id="attackIntelPanel">
+    <div class="panel-header">
+      <div class="panel-title">
+        🧠 ATTACK INTELLIGENCE CENTER
+        <span class="attack-counter-badge" id="attackCountBadge">0 détectées</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="panel-badge" id="attackIntelTs">--</div>
+        <button class="btn btn-danger" style="padding:4px 10px;font-size:10px" onclick="clearAttackHistory()">🗑️ VIDER</button>
+      </div>
+    </div>
+    <div class="attack-intel-grid">
+
+      <!-- SECTION 1: Type d'attaque détecté -->
+      <div class="attack-intel-section">
+        <div class="attack-intel-title">⚡ Type d'Attaque</div>
+        <div class="attack-type-badge none" id="attackTypeBadge">✅ AUCUNE MENACE</div>
+        <div class="attack-type-desc" id="attackTypeDesc">
+          Surveillance active. Aucune activité malveillante détectée pour le moment.
+        </div>
+        <div style="margin-top:12px">
+          <div class="attack-severity-bar">
+            <span class="severity-label">Sévérité</span>
+            <div class="severity-track">
+              <div class="severity-fill low" id="severityFill"></div>
+            </div>
+            <span class="severity-val low" id="severityVal">FAIBLE</span>
+          </div>
+          <div class="attack-severity-bar" style="margin-top:6px">
+            <span class="severity-label">Confiance</span>
+            <div class="severity-track">
+              <div class="severity-fill" id="confidenceFill" style="background:var(--green);width:0%"></div>
+            </div>
+            <span class="severity-val" id="confidenceVal" style="color:var(--textdim)">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 2: Historique des attaques -->
+      <div class="attack-intel-section">
+        <div class="attack-intel-title">📜 Historique des Attaques</div>
+        <div class="attack-history-list" id="attackHistoryList">
+          <div class="empty-state" style="padding:20px 0;font-size:11px">
+            Aucune attaque enregistrée.
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 3: Alertes Email -->
+      <div class="attack-intel-section">
+        <div class="attack-intel-title">📧 Alertes Email</div>
+        <div class="notif-counter">
+          <span>Emails envoyés (session)</span>
+          <span id="emailSentCount">0</span>
+        </div>
+        <div class="mail-status idle" id="mailStatus">
+          <span class="mail-icon">📭</span>
+          <span id="mailStatusText">En attente d'activité...</span>
+        </div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--textdim);margin-bottom:6px">
+          Destinataire: <span style="color:var(--accent)" id="alertRecipient">SNS Topic (abonnés)</span>
+        </div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--textdim);margin-bottom:10px">
+          Mode: <span style="color:var(--accent)">Auto (à chaque nouvelle attaque)</span>
+        </div>
+        <button class="btn-send-alert" id="manualAlertBtn" onclick="sendAttackAlertManual()">
+          📧 ENVOYER ALERTE MANUELLE
+        </button>
+        <div style="margin-top:10px;font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--textdim);line-height:1.5">
+          Les alertes email sont envoyées automatiquement via AWS SNS dès qu'une attaque est détectée dans vos logs ou métriques.
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -957,6 +1329,11 @@ async function fetchLogs() {
     // Détection attaque
     if (unauth > 10) triggerAttackDetection(`${unauth} accès refusés — possible attaque par force brute !`);
     if (errors > 20) triggerAttackDetection(`${errors} erreurs ECS — service potentiellement compromis !`);
+
+    // ── ATTACK INTELLIGENCE ──
+    const counts = { unauth, errors, requests, totalErrors: errors };
+    const detected = analyzeAttack(events, counts);
+    updateAttackIntelPanel(detected, new Date());
 
     // KPIs logs
     setKpi('kpiErrors', 'kpiErrorsVal', 'kpiErrorsSub', errors, 'Dernière heure', errors > 0);
@@ -1321,8 +1698,311 @@ function drawChart() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// NOTIFICATIONS
+// ATTACK INTELLIGENCE ENGINE
 // ═══════════════════════════════════════════════════════════
+
+// Dictionnaire des signatures d'attaques
+const ATTACK_SIGNATURES = [
+  {
+    name: 'Brute Force / Credential Stuffing',
+    icon: '🔐',
+    severity: 'critical',
+    confidence: 95,
+    description: 'Tentatives répétées de connexion échouées. Attaque par force brute détectée sur les endpoints d\'authentification.',
+    patterns: [/401|403|unauthorized|forbidden|login.failed|invalid.creden/i],
+    threshold: (counts) => counts.unauth > 10,
+    recommendation: 'Bloquer l\'IP source, activer MFA, renforcer le rate limiting.'
+  },
+  {
+    name: 'DDoS / Flood Attack',
+    icon: '🌊',
+    severity: 'critical',
+    confidence: 90,
+    description: 'Volume anormal de requêtes détecté. Le service est potentiellement submergé par un flood malveillant.',
+    patterns: [/too.many.requests|rate.limit|429|connection.reset|timeout/i],
+    threshold: (counts) => counts.requests > 500 || counts.totalErrors > 30,
+    recommendation: 'Activer AWS WAF, augmenter les règles de rate limiting, contacter le support AWS.'
+  },
+  {
+    name: 'SQL Injection',
+    icon: '💉',
+    severity: 'high',
+    confidence: 88,
+    description: 'Tentatives d\'injection SQL détectées dans les requêtes. Possible exfiltration ou altération de données.',
+    patterns: [/sql.inject|union.select|drop.table|1=1|or.1=1|'--|%27|xp_|exec\(|cast\(/i],
+    threshold: null,
+    recommendation: 'Vérifier les paramètres non sanitisés, activer WAF SQL rules, auditer les requêtes DB.'
+  },
+  {
+    name: 'XSS (Cross-Site Scripting)',
+    icon: '🕷️',
+    severity: 'high',
+    confidence: 85,
+    description: 'Injection de scripts malveillants détectée. Possible vol de session ou exécution de code côté client.',
+    patterns: [/<script|javascript:|onerror=|onload=|alert\(|%3Cscript|xss/i],
+    threshold: null,
+    recommendation: 'Activer Content-Security-Policy, valider et encoder toutes les entrées utilisateur.'
+  },
+  {
+    name: 'Path Traversal / LFI',
+    icon: '📂',
+    severity: 'high',
+    confidence: 87,
+    description: 'Tentatives d\'accès à des fichiers système détectées. L\'attaquant tente de lire des fichiers sensibles.',
+    patterns: [/\.\.\//i, /\/etc\/passwd|\/etc\/shadow|\.\.\\|%2e%2e/i],
+    threshold: null,
+    recommendation: 'Valider les chemins d\'accès, restreindre les permissions fichiers, activer chroot.'
+  },
+  {
+    name: 'Command Injection / RCE',
+    icon: '💻',
+    severity: 'critical',
+    confidence: 92,
+    description: 'Tentative d\'exécution de commandes système à distance. Risque d\'exécution de code arbitraire.',
+    patterns: [/;.*(ls|cat|id|whoami|uname|ping|curl|wget)|`.*`|\$\(.*\)|cmd=|exec=|system\(/i],
+    threshold: null,
+    recommendation: 'Désactiver l\'exécution de commandes, valider toutes les entrées, isoler le conteneur.'
+  },
+  {
+    name: 'Scanner / Reconnaissance',
+    icon: '🔍',
+    severity: 'medium',
+    confidence: 75,
+    description: 'Scan de ports ou d\'endpoints détecté. Un attaquant cartographie votre infrastructure.',
+    patterns: [/nikto|nmap|sqlmap|burpsuite|nessus|masscan|zgrab|dirbuster|gobuster/i],
+    threshold: null,
+    recommendation: 'Bloquer les user-agents suspects, surveiller les logs d\'accès, activer l\'IDS.'
+  },
+  {
+    name: 'Service Crash / Resource Exhaustion',
+    icon: '💥',
+    severity: 'high',
+    confidence: 80,
+    description: 'Crashs ou erreurs répétés du service ECS. L\'application est potentiellement déstabilisée.',
+    patterns: [/out.of.memory|oom.kill|container.stopped|task.stopped|crashed|exit.code/i],
+    threshold: (counts) => counts.totalErrors > 20,
+    recommendation: 'Vérifier les ressources ECS, augmenter les limites mémoire, analyser les core dumps.'
+  },
+  {
+    name: 'Unauthorized API Access',
+    icon: '🔑',
+    severity: 'medium',
+    confidence: 78,
+    description: 'Accès non autorisé aux endpoints API. Possible tentative de contournement des contrôles d\'accès.',
+    patterns: [/api.key.invalid|token.expired|jwt.invalid|bearer.invalid|hmac.failed/i],
+    threshold: (counts) => counts.unauth > 5,
+    recommendation: 'Révoquer les tokens compromis, renforcer la validation JWT, auditer les permissions API.'
+  }
+];
+
+// État de l'intelligence d'attaque
+let attackHistory      = [];
+let attackEmailCount   = 0;
+let currentAttack      = null;
+let lastAlertSentAt    = 0;
+const ALERT_COOLDOWN   = 60000; // 1 min entre deux emails auto
+
+// Analyser les logs et métriques pour détecter le type d'attaque
+function analyzeAttack(logEvents, counts) {
+  const allLogText = logEvents.map(e => e.msg || '').join('\n');
+  let detected = null;
+  let maxConfidence = 0;
+
+  for (const sig of ATTACK_SIGNATURES) {
+    // Vérifier les patterns de texte dans les logs
+    const patternMatch = sig.patterns.some(p => p.test(allLogText));
+    // Vérifier les seuils numériques
+    const thresholdMatch = sig.threshold ? sig.threshold(counts) : false;
+
+    if (patternMatch || thresholdMatch) {
+      const score = sig.confidence + (patternMatch && thresholdMatch ? 5 : 0);
+      if (score > maxConfidence) {
+        maxConfidence = score;
+        detected = { ...sig, confidence: Math.min(99, score) };
+      }
+    }
+  }
+
+  return detected;
+}
+
+// Mettre à jour le panneau Attack Intelligence
+function updateAttackIntelPanel(detected, timestamp) {
+  const panel     = document.getElementById('attackIntelPanel');
+  const badge     = document.getElementById('attackTypeBadge');
+  const desc      = document.getElementById('attackTypeDesc');
+  const sevFill   = document.getElementById('severityFill');
+  const sevVal    = document.getElementById('severityVal');
+  const confFill  = document.getElementById('confidenceFill');
+  const confVal   = document.getElementById('confidenceVal');
+  const ts        = document.getElementById('attackIntelTs');
+
+  ts.textContent = new Date().toLocaleTimeString('fr-FR');
+
+  if (!detected) {
+    panel.classList.remove('has-attack');
+    badge.className = 'attack-type-badge none';
+    badge.textContent = '✅ AUCUNE MENACE';
+    desc.textContent  = 'Surveillance active. Aucune activité malveillante détectée.';
+    sevFill.className = 'severity-fill low';
+    sevVal.className  = 'severity-val low';
+    sevVal.textContent = 'FAIBLE';
+    confFill.style.width = '0%';
+    confFill.style.background = 'var(--green)';
+    confVal.textContent = '—';
+    confVal.style.color = 'var(--textdim)';
+    currentAttack = null;
+    return;
+  }
+
+  panel.classList.add('has-attack');
+  badge.className = 'attack-type-badge active';
+  badge.textContent = `${detected.icon} ${detected.name}`;
+  desc.textContent  = detected.description;
+
+  // Sévérité
+  const sevMap = {
+    low: { cls: 'low', label: 'FAIBLE' },
+    medium: { cls: 'medium', label: 'MOYENNE' },
+    high: { cls: 'high', label: 'ÉLEVÉE' },
+    critical: { cls: 'critical', label: 'CRITIQUE' }
+  };
+  const sev = sevMap[detected.severity] || sevMap.medium;
+  sevFill.className = `severity-fill ${sev.cls}`;
+  sevVal.className  = `severity-val ${sev.cls}`;
+  sevVal.textContent = sev.label;
+
+  // Confiance
+  const confColor = detected.confidence > 85 ? 'var(--danger)' : detected.confidence > 70 ? 'var(--warn)' : 'var(--green)';
+  confFill.style.width = detected.confidence + '%';
+  confFill.style.background = confColor;
+  confVal.textContent = detected.confidence + '%';
+  confVal.style.color = confColor;
+
+  // Stocker et historiser si c'est une nouvelle attaque
+  if (!currentAttack || currentAttack.name !== detected.name) {
+    currentAttack = detected;
+    addToAttackHistory(detected, timestamp || new Date());
+
+    // Envoyer email automatiquement
+    autoSendAttackAlert(detected);
+  }
+}
+
+// Ajouter à l'historique
+function addToAttackHistory(attack, timestamp) {
+  const entry = {
+    name: attack.name,
+    icon: attack.icon,
+    severity: attack.severity,
+    time: timestamp instanceof Date ? timestamp.toLocaleTimeString('fr-FR') : timestamp,
+    confidence: attack.confidence
+  };
+  attackHistory.unshift(entry);
+  if (attackHistory.length > 20) attackHistory.pop();
+
+  // Mettre à jour le badge compteur
+  document.getElementById('attackCountBadge').textContent = `${attackHistory.length} détectées`;
+
+  renderAttackHistory();
+}
+
+// Afficher l'historique
+function renderAttackHistory() {
+  const el = document.getElementById('attackHistoryList');
+  if (!attackHistory.length) {
+    el.innerHTML = '<div class="empty-state" style="padding:20px 0;font-size:11px">Aucune attaque enregistrée.</div>';
+    return;
+  }
+  el.innerHTML = attackHistory.map(e => `
+    <div class="attack-hist-item">
+      <div class="attack-hist-dot ${e.severity}"></div>
+      <div class="attack-hist-info">
+        <div class="attack-hist-type">${e.icon} ${e.name}</div>
+        <div class="attack-hist-time">${e.time} · Confiance: ${e.confidence}%</div>
+      </div>
+      <div class="attack-hist-sev ${e.severity}">${e.severity.toUpperCase()}</div>
+    </div>
+  `).join('');
+}
+
+// Vider l'historique
+function clearAttackHistory() {
+  attackHistory = [];
+  currentAttack = null;
+  document.getElementById('attackCountBadge').textContent = '0 détectées';
+  renderAttackHistory();
+  updateAttackIntelPanel(null);
+}
+
+// Envoyer un email automatique quand attaque détectée
+async function autoSendAttackAlert(attack) {
+  const now = Date.now();
+  if (now - lastAlertSentAt < ALERT_COOLDOWN) return; // cooldown
+  lastAlertSentAt = now;
+
+  setMailStatus('sending', `Envoi alerte: ${attack.name}...`);
+
+  try {
+    const res = await apiFetch('/api/soc/attack-alert', {
+      method: 'POST',
+      body: JSON.stringify({
+        attack_name: attack.name,
+        severity: attack.severity,
+        confidence: attack.confidence,
+        description: attack.description,
+        recommendation: attack.recommendation
+      })
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      attackEmailCount++;
+      document.getElementById('emailSentCount').textContent = attackEmailCount;
+      setMailStatus('sent', `✅ Email envoyé: ${attack.name}`);
+      setTimeout(() => setMailStatus('idle', 'En attente d\'activité...'), 10000);
+      showNotif('danger-notif', `🚨 ${attack.icon} ${attack.name}`, `Alerte email envoyée ! Sévérité: ${attack.severity.toUpperCase()}`);
+    } else {
+      setMailStatus('idle', '⚠️ Erreur envoi: ' + (data.error || 'Inconnue'));
+    }
+  } catch(e) {
+    if (e.message !== 'session_expired') {
+      setMailStatus('idle', '❌ Erreur réseau');
+    }
+  }
+}
+
+// Alerte manuelle
+async function sendAttackAlertManual() {
+  const btn = document.getElementById('manualAlertBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ ENVOI EN COURS...';
+
+  const attack = currentAttack || {
+    name: 'Alerte Manuelle SOC',
+    severity: 'medium',
+    confidence: 100,
+    description: 'Alerte manuelle déclenchée par l\'opérateur SOC.',
+    recommendation: 'Vérifier les logs et les métriques manuellement.',
+    icon: '⚠️'
+  };
+
+  await autoSendAttackAlert(attack);
+  lastAlertSentAt = 0; // reset cooldown pour manuel
+
+  btn.disabled = false;
+  btn.textContent = '📧 ENVOYER ALERTE MANUELLE';
+}
+
+// Mettre à jour l'état de l'envoi mail
+function setMailStatus(state, text) {
+  const el = document.getElementById('mailStatus');
+  const icons = { sending: '📤', sent: '📬', idle: '📭' };
+  el.className = `mail-status ${state}`;
+  el.innerHTML = `<span class="mail-icon">${icons[state] || '📭'}</span><span id="mailStatusText">${text}</span>`;
+}
+
+
 let notifTimer;
 function showNotif(cls, title, msg) {
   const el      = document.getElementById('notif');
