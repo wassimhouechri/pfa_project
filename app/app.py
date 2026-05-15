@@ -41,10 +41,12 @@ def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if "username" not in session:
-            # API routes: retourner JSON 401 (pas redirect HTML qui casse res.json())
-            if request.path.startswith("/api/"):
-                from flask import jsonify as _j
-                return _j({"ok": False, "error": "session_expired"}), 401
+            # SOC API routes seulement : retourner JSON 401
+            # (le fetch JS vérifie content-type pour éviter que res.json() plante)
+            # Les autres routes /api/ (ex: /api/whoami) gardent le redirect 302
+            # pour rester compatibles avec les tests existants.
+            if request.path.startswith("/api/soc/"):
+                return jsonify({"ok": False, "error": "session_expired"}), 401
             return redirect(url_for("login"))
         return f(*args, **kwargs)
     return decorated
