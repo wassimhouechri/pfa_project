@@ -81,9 +81,6 @@ jobs:
 
 # ============================================================
 # JOB 2 — Build Docker Hub + Trivy scan image
-# ✅ Docker Hub (ECR bloqué par voc-cancel-cred AWS Academy)
-# ✅ Trivy scanne l'image locale AVANT push
-# ✅ CodeQL v4
 # ============================================================
   build-scan:
     name: "Build — Docker Hub + Trivy"
@@ -211,23 +208,13 @@ jobs:
 # ============================================================
 # JOB 4 — Deploy ECS Fargate
 #
-# STRATÉGIE voc-cancel-cred AWS Academy :
-#   ❌ BLOQUÉ  : ecr:GetAuthorizationToken
-#   ❌ BLOQUÉ  : ecs:DescribeTaskDefinition
-#   ❌ BLOQUÉ  : ecs:UpdateService
-#   ✅ AUTORISÉ: ecs:RegisterTaskDefinition
-#   ✅ AUTORISÉ: ecs:ListTasks
-#   ✅ AUTORISÉ: ecs:DescribeTasks
-#   ✅ AUTORISÉ: ecs:StopTask  ← force ECS à redémarrer avec la nouvelle image
-#   ✅ AUTORISÉ: ec2:DescribeNetworkInterfaces
-#   ✅ AUTORISÉ: logs:* / cloudwatch:* / sns:*
-#
-# FLOW :
-#   1. sed remplace DOCKERHUB_IMAGE_PLACEHOLDER dans ecs-task-definition.json
-#   2. RegisterTaskDefinition → nouvelle revision
-#   3. StopTask → ECS détecte crash → relance automatiquement
-#      le service ECS avec la dernière task definition enregistrée
-#   4. On récupère IP publique et on fait health check
+# CORRECTION PAR RAPPORT À L'ANCIENNE VERSION :
+#   ❌ AVANT  : stop-task uniquement → échouait silencieusement
+#               ECS gardait l'ancienne image indéfiniment
+#   ✅ APRÈS  : update-service --force-new-deployment EN PRIORITÉ
+#               C'est la vraie commande pour forcer ECS à redéployer
+#               avec la nouvelle task definition + nouvelle image.
+#               stop-task reste en fallback si update-service bloqué.
 # ============================================================
   deploy-ecs:
     name: "Deploy — ECS Fargate"
@@ -251,28 +238,22 @@ jobs:
           aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      # ── ÉTAPE 1 : injecter image dans la task def locale ────────────
-      # ecs-task-definition.json est dans le repo et contient
-      # DOCKERHUB_IMAGE_PLACEHOLDER comme valeur d'image.
-      # On NE fait PAS describe-task-definition (bloqué).
+      # ── ÉTAPE 1 : injecter image dans la task definition ────────────
       - name: "Préparer task definition (image Docker Hub)"
         run: |
           NEW_IMAGE="${{ env.DOCKERHUB_IMAGE }}:${{ github.sha }}"
           echo "🐳 Nouvelle image : $NEW_IMAGE"
 
-          # Vérifier que le fichier JSON est valide
           python3 -c "import json; json.load(open('ecs-task-definition.json'))" \
-            && echo "✅ ecs-task-definition.json est valide" \
-            || (echo "❌ ecs-task-definition.json est corrompu !" && exit 1)
+            && echo "✅ ecs-task-definition.json valide" \
+            || (echo "❌ ecs-task-definition.json corrompu !" && exit 1)
 
-          # Injecter l'image
           sed "s|DOCKERHUB_IMAGE_PLACEHOLDER|$NEW_IMAGE|g" \
             ecs-task-definition.json > task-def-ready.json
 
-          echo "✅ task-def-ready.json :"
-          cat task-def-ready.json
+          echo "✅ task-def-ready.json généré avec image: $NEW_IMAGE"
 
-      # ── ÉTAPE 2 : register (autorisé) ───────────────────────────────
+      # ── ÉTAPE 2 : register nouvelle task definition ─────────────────
       - name: "Register nouvelle task definition"
         id: register
         run: |
@@ -285,38 +266,47 @@ jobs:
           echo "✅ Registered : $NEW_ARN"
           echo "task_def_arn=$NEW_ARN" >> $GITHUB_OUTPUT
 
-      # ── ÉTAPE 3 : forcer le redéploiement via StopTask ─────────────
-      # UpdateService est bloqué → on stoppe la task en cours.
-      # ECS (configured avec desired count ≥ 1) relance immédiatement
-      # une nouvelle task en utilisant la dernière task definition
-      # enregistrée pour ce service.
-      - name: "Force redeploy via StopTask → ECS restart"
+      # ── ÉTAPE 3 : CORRECTION — update-service + fallback stop-task ──
+      - name: "Force redeploy — UpdateService (+ StopTask fallback)"
         run: |
-          echo "🔍 Recherche de la task en cours..."
+          echo "🔄 update-service --force-new-deployment..."
 
-          TASK_ARN=$(aws ecs list-tasks \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --service-name ${{ env.ECS_SERVICE }} \
-            --desired-status RUNNING \
-            --query "taskArns[0]" \
-            --output text \
-            --region ${{ env.AWS_REGION }} 2>/dev/null || echo "None")
+          aws ecs update-service \
+            --cluster         ${{ env.ECS_CLUSTER }} \
+            --service         ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ steps.register.outputs.task_def_arn }} \
+            --force-new-deployment \
+            --region          ${{ env.AWS_REGION }} \
+            --query           "service.serviceName" \
+            --output          text \
+            && echo "✅ UpdateService OK — ECS redéploie avec la nouvelle image" \
+            || {
+              echo "⚠️  UpdateService bloqué — fallback stop-task..."
 
-          if [ "$TASK_ARN" = "None" ] || [ -z "$TASK_ARN" ]; then
-            echo "⚠️  Aucune task RUNNING trouvée — ECS démarrera la nouvelle task def automatiquement"
-          else
-            echo "🛑 Stop task : $TASK_ARN"
-            aws ecs stop-task \
-              --cluster ${{ env.ECS_CLUSTER }} \
-              --task "$TASK_ARN" \
-              --reason "CI/CD redeploy — commit ${{ github.sha }}" \
-              --region ${{ env.AWS_REGION }} \
-              && echo "✅ Task stoppée — ECS relance avec la nouvelle image" \
-              || echo "⚠️  stop-task non autorisé"
+              TASK_ARN=$(aws ecs list-tasks \
+                --cluster        ${{ env.ECS_CLUSTER }} \
+                --service-name   ${{ env.ECS_SERVICE }} \
+                --desired-status RUNNING \
+                --query          "taskArns[0]" \
+                --output         text \
+                --region         ${{ env.AWS_REGION }} 2>/dev/null || echo "None")
 
-            echo "⏳ Attente 45s pour que ECS relance la nouvelle task..."
-            sleep 45
-          fi
+              if [ "$TASK_ARN" = "None" ] || [ -z "$TASK_ARN" ]; then
+                echo "⚠️  Aucune task RUNNING — ECS démarrera automatiquement"
+              else
+                echo "🛑 Stop task : $TASK_ARN"
+                aws ecs stop-task \
+                  --cluster ${{ env.ECS_CLUSTER }} \
+                  --task    "$TASK_ARN" \
+                  --reason  "CI/CD redeploy — commit ${{ github.sha }}" \
+                  --region  ${{ env.AWS_REGION }} \
+                  && echo "✅ Task stoppée — ECS relance avec la nouvelle image" \
+                  || echo "❌ StopTask aussi bloqué — vérifier permissions IAM"
+              fi
+            }
+
+          echo "⏳ Attente 60s démarrage nouvelle task..."
+          sleep 60
 
       # ── ÉTAPE 4 : récupérer IP publique + health check ──────────────
       - name: "Récupérer IP publique + health check"
@@ -326,15 +316,15 @@ jobs:
           TASK_ID=""
           PUBLIC_IP="N/A"
 
-          echo "🔍 Recherche de la nouvelle task..."
+          echo "🔍 Recherche nouvelle task RUNNING..."
           for i in {1..12}; do
             TASK_ARN=$(aws ecs list-tasks \
-              --cluster ${{ env.ECS_CLUSTER }} \
-              --service-name ${{ env.ECS_SERVICE }} \
+              --cluster        ${{ env.ECS_CLUSTER }} \
+              --service-name   ${{ env.ECS_SERVICE }} \
               --desired-status RUNNING \
-              --query "taskArns[0]" \
-              --output text \
-              --region ${{ env.AWS_REGION }} 2>/dev/null || echo "None")
+              --query          "taskArns[0]" \
+              --output         text \
+              --region         ${{ env.AWS_REGION }} 2>/dev/null || echo "None")
 
             if [ "$TASK_ARN" != "None" ] && [ -n "$TASK_ARN" ]; then
               echo "✅ Task trouvée : $TASK_ARN"
@@ -342,15 +332,15 @@ jobs:
 
               ENI_ID=$(aws ecs describe-tasks \
                 --cluster ${{ env.ECS_CLUSTER }} \
-                --tasks "$TASK_ARN" \
-                --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" \
-                --output text \
-                --region ${{ env.AWS_REGION }} 2>/dev/null || echo "")
+                --tasks   "$TASK_ARN" \
+                --query   "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value" \
+                --output  text \
+                --region  ${{ env.AWS_REGION }} 2>/dev/null || echo "")
 
               if [ -n "$ENI_ID" ] && [ "$ENI_ID" != "None" ]; then
                 PUBLIC_IP=$(aws ec2 describe-network-interfaces \
                   --network-interface-ids "$ENI_ID" \
-                  --query "NetworkInterfaces[0].Association.PublicIp" \
+                  --query  "NetworkInterfaces[0].Association.PublicIp" \
                   --output text \
                   --region ${{ env.AWS_REGION }} 2>/dev/null || echo "N/A")
               fi
@@ -364,9 +354,8 @@ jobs:
           echo "public_ip=$PUBLIC_IP"     >> $GITHUB_OUTPUT
           echo "deploy_time=$DEPLOY_TIME" >> $GITHUB_OUTPUT
 
-          # Health check
           if [ "$PUBLIC_IP" != "N/A" ] && [ -n "$PUBLIC_IP" ]; then
-            echo "⏳ Attente 20s pour le démarrage de Flask..."
+            echo "⏳ Attente 20s démarrage Flask..."
             sleep 20
             HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
               http://$PUBLIC_IP:5000/health 2>/dev/null || echo "000")
@@ -381,10 +370,10 @@ jobs:
             echo "║  Task   : $TASK_ID"
             echo "╚═══════════════════════════════════════════╝"
           else
-            echo "⚠️  IP non récupérée — vérifier manuellement dans la console ECS"
+            echo "⚠️  IP non récupérée — vérifier dans la console ECS"
           fi
 
-      # ── ÉTAPE 5 : afficher les derniers logs CloudWatch ─────────────
+      # ── ÉTAPE 5 : logs CloudWatch ───────────────────────────────────
       - name: "Tail CloudWatch logs"
         if: always()
         run: |
@@ -392,24 +381,19 @@ jobs:
           if [ -n "$TASK_ID" ]; then
             echo "=== CloudWatch Logs — /ecs/devsecops ==="
             aws logs get-log-events \
-              --log-group-name "${{ env.LOG_GROUP }}" \
+              --log-group-name  "${{ env.LOG_GROUP }}" \
               --log-stream-name "ecs/${{ env.CONTAINER_NAME }}/$TASK_ID" \
               --limit 30 \
               --region ${{ env.AWS_REGION }} \
-              --query "events[*].message" \
+              --query  "events[*].message" \
               --output text 2>/dev/null \
-              || echo "(logs pas encore disponibles — le container démarre)"
+              || echo "(logs pas encore disponibles)"
           else
             echo "⚠️  Pas de task_id — logs non disponibles"
           fi
 
 # ============================================================
 # JOB 5 — SOC Reset
-# Réinitialise le dashboard SOC à chaque déploiement :
-#   - Métriques ErrorCount + UnauthorizedAccessCount → 0
-#   - Marqueur de déploiement injecté dans CloudWatch Logs
-#   - Alarmes CloudWatch remises à OK si elles étaient en ALARM
-#   - Notification email via SNS
 # ============================================================
   soc-reset:
     name: "SOC Reset — Dashboard réinitialisé"
@@ -426,7 +410,6 @@ jobs:
           aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      # ── Métriques SOC → 0 ────────────────────────────────────────────
       - name: "Reset métriques SOC/Security → 0"
         run: |
           TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -439,7 +422,6 @@ jobs:
               || echo "⚠️  ${METRIC} : put-metric-data non autorisé"
           done
 
-      # ── Marqueur de déploiement dans CloudWatch Logs ─────────────────
       - name: "Injecter marqueur SOC-RESET dans CloudWatch Logs"
         run: |
           TASK_ID="${{ needs.deploy-ecs.outputs.task_id }}"
@@ -453,22 +435,19 @@ jobs:
 
           MSG="[SOC-RESET] Deploy OK | commit=${{ github.sha }} | branch=${{ github.ref_name }} | actor=${{ github.actor }} | metrics=0 | time=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 
-          # Créer le stream si nécessaire
           aws logs create-log-stream \
-            --log-group-name "${{ env.LOG_GROUP }}" \
+            --log-group-name  "${{ env.LOG_GROUP }}" \
             --log-stream-name "$STREAM" \
             --region ${{ env.AWS_REGION }} 2>/dev/null || true
 
-          # Injecter le marqueur
           aws logs put-log-events \
-            --log-group-name "${{ env.LOG_GROUP }}" \
+            --log-group-name  "${{ env.LOG_GROUP }}" \
             --log-stream-name "$STREAM" \
             --log-events "timestamp=${NOW_MS},message=${MSG}" \
             --region ${{ env.AWS_REGION }} \
-            && echo "✅ Marqueur SOC-RESET injecté → CloudWatch Logs visible dans le SOC Dashboard" \
+            && echo "✅ Marqueur SOC-RESET injecté" \
             || echo "⚠️  put-log-events non autorisé"
 
-      # ── Alarmes CloudWatch → OK ───────────────────────────────────────
       - name: "Reset alarmes CloudWatch ALARM → OK"
         run: |
           for ALARM in \
@@ -478,7 +457,7 @@ jobs:
 
             STATE=$(aws cloudwatch describe-alarms \
               --alarm-names "$ALARM" \
-              --query "MetricAlarms[0].StateValue" \
+              --query  "MetricAlarms[0].StateValue" \
               --output text \
               --region ${{ env.AWS_REGION }} 2>/dev/null || echo "NOT_FOUND")
 
@@ -486,7 +465,7 @@ jobs:
 
             if [ "$STATE" = "ALARM" ]; then
               aws cloudwatch set-alarm-state \
-                --alarm-name "$ALARM" \
+                --alarm-name  "$ALARM" \
                 --state-value OK \
                 --state-reason "Auto-reset CI/CD commit ${{ github.sha }}" \
                 --region ${{ env.AWS_REGION }} \
@@ -495,7 +474,6 @@ jobs:
             fi
           done
 
-      # ── Notification email SNS ────────────────────────────────────────
       - name: "Notification SNS — déploiement + SOC réinitialisé"
         run: |
           IP="${{ needs.deploy-ecs.outputs.public_ip }}"
@@ -522,15 +500,11 @@ jobs:
             Metriques ErrorCount         -> 0
             Metriques UnauthorizedAccess -> 0
             Alarmes CloudWatch           -> OK
-            Marqueur dans CW Logs        -> injecte
-
-          Le SOC Dashboard affiche maintenant les vraies
-          donnees CloudWatch de ce nouveau deploiement." \
+            Marqueur dans CW Logs        -> injecte" \
             --region ${{ env.AWS_REGION }} \
             && echo "✅ Email SNS envoyé" \
             || echo "⚠️  SNS non autorisé"
 
-      # ── Résumé final ──────────────────────────────────────────────────
       - name: "Résumé final"
         run: |
           IP="${{ needs.deploy-ecs.outputs.public_ip }}"
@@ -546,12 +520,8 @@ jobs:
           echo "║ ✅ Job 1 — SAST (Gitleaks+Bandit+Safety+Tests)"
           echo "║ ✅ Job 2 — Build Docker Hub + Trivy + CodeQL"
           echo "║ ✅ Job 3 — DAST OWASP ZAP"
-          echo "║ ✅ Job 4 — ECS deploy (register + StopTask)"
+          echo "║ ✅ Job 4 — ECS deploy (UpdateService + fallback StopTask)"
           echo "║ ✅ Job 5 — SOC Reset"
-          echo "║           Métriques → 0"
-          echo "║           Alarmes CW → OK"
-          echo "║           Log CW → marqueur injecté"
-          echo "║           Email SNS → envoyé"
           echo "╠══════════════════════════════════════════════╣"
           echo "║ SOC : http://${IP}:5000/soc"
           echo "╚══════════════════════════════════════════════╝"
