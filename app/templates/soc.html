@@ -7,32 +7,38 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
-    .sidebar { position: fixed; top: 0; left: 0; width: 220px; height: 100vh; background: #1a1d27; border-right: 1px solid #2d3148; padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: 6px; z-index: 100; }
+    .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #1a1d27; border-right: 1px solid #2d3148; padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: 6px; z-index: 100; overflow-y: auto; }
     .sidebar-logo { display: flex; align-items: center; gap: 10px; padding: 0 0.5rem 1.5rem; border-bottom: 1px solid #2d3148; margin-bottom: 0.5rem; }
-    .logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, #3b82f6, #6366f1); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    .logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, #3b82f6, #6366f1); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
     .logo-text { font-size: 15px; font-weight: 600; color: #f1f5f9; }
     .logo-sub  { font-size: 11px; color: #64748b; }
-    .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; font-size: 13px; color: #94a3b8; cursor: pointer; transition: all 0.15s; text-decoration: none; }
-    .nav-item:hover, .nav-item.active { background: #252840; color: #e2e8f0; }
-    .nav-item.active { color: #60a5fa; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; font-size: 13px; color: #94a3b8; cursor: pointer; transition: all 0.15s; text-decoration: none; border: none; background: none; width: 100%; text-align: left; }
+    .nav-item:hover { background: #252840; color: #e2e8f0; }
+    .nav-item.active { background: #252840; color: #60a5fa; }
     .nav-section { font-size: 10px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; padding: 12px 12px 4px; }
     .sidebar-bottom { margin-top: auto; padding-top: 1rem; border-top: 1px solid #2d3148; }
     .status-badge { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #0d1f0d; border: 1px solid #1a3d1a; border-radius: 8px; font-size: 12px; color: #4ade80; }
-    .dot-pulse { width: 8px; height: 8px; background: #4ade80; border-radius: 50%; animation: pulse 2s infinite; }
+    .dot-pulse { width: 8px; height: 8px; background: #4ade80; border-radius: 50%; animation: pulse 2s infinite; flex-shrink: 0; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .return-link { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; text-decoration: none; padding: 6px 12px; background: rgba(255,255,255,0.05); border: 1px solid #2d3148; border-radius: 8px; transition: all 0.15s; margin-top: 10px; }
+    .return-link { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: #94a3b8; text-decoration: none; padding: 6px 12px; background: rgba(255,255,255,0.05); border: 1px solid #2d3148; border-radius: 8px; transition: all 0.15s; margin-top: 10px; }
     .return-link:hover { background: #252840; color: #e2e8f0; }
-    .main { margin-left: 220px; padding: 2rem; min-height: 100vh; }
-    .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; }
+    /* AWS nav buttons in sidebar */
+    .aws-nav-btn { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; font-size: 12px; color: #60a5fa; cursor: pointer; transition: all 0.15s; text-decoration: none; border: 1px solid rgba(59,130,246,0.2); background: rgba(59,130,246,0.06); width: 100%; margin-bottom: 3px; }
+    .aws-nav-btn:hover { background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.4); color: #93c5fd; }
+
+    .main { margin-left: 230px; padding: 2rem; min-height: 100vh; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; flex-wrap: wrap; gap: 12px; }
     .topbar-title { font-size: 20px; font-weight: 600; color: #f1f5f9; }
     .topbar-sub   { font-size: 13px; color: #64748b; margin-top: 2px; }
-    .topbar-actions { display: flex; align-items: center; gap: 10px; }
-    .btn { display: flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid #2d3148; background: #1a1d27; color: #94a3b8; transition: all 0.15s; text-decoration: none; }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid #2d3148; background: #1a1d27; color: #94a3b8; transition: all 0.15s; text-decoration: none; white-space: nowrap; }
     .btn:hover { background: #252840; color: #e2e8f0; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary { background: #1d4ed8; border-color: #2563eb; color: #fff; }
-    .btn-primary:hover { background: #2563eb; }
+    .btn-primary:hover:not(:disabled) { background: #2563eb; }
+    .btn-aws { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.25); color: #fbbf24; }
+    .btn-aws:hover { background: rgba(245,158,11,0.18); border-color: rgba(245,158,11,0.5); color: #fde68a; }
     .last-update { font-size: 12px; color: #475569; }
     .source-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
     .source-live  { background: rgba(34,197,94,0.12);  color: #4ade80;  border: 1px solid rgba(34,197,94,0.25); }
@@ -59,56 +65,69 @@
     .metric-value.green { color:#4ade80; }
     .metric-trend { font-size:11px; color:#475569; margin-top:6px; }
     .card { background:#1a1d27; border:1px solid #2d3148; border-radius:12px; padding:1.25rem; margin-bottom:16px; }
-    .card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem; }
-    .card-title { font-size:13px; font-weight:600; color:#94a3b8; display:flex; align-items:center; gap:8px; }
-    .log-container { background:#0d0f17; border-radius:8px; padding:1rem; font-family:'Courier New',monospace; font-size:12px; height:340px; overflow-y:auto; display:flex; flex-direction:column; scroll-behavior:smooth; }
+    .card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem; flex-wrap: wrap; gap: 8px; }
+    .card-title { font-size:13px; font-weight:600; color:#94a3b8; display:flex; align-items:center; gap:8px; flex-wrap: wrap; }
+    .card-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    /* Logs */
+    .log-container { background:#0d0f17; border-radius:8px; padding:1rem; font-family:'Courier New',monospace; font-size:12px; height:360px; overflow-y:auto; display:flex; flex-direction:column; scroll-behavior:smooth; }
     .log-row { display:flex; gap:10px; padding:3px 0; line-height:1.6; border-bottom:1px solid rgba(255,255,255,0.03); }
-    .log-time  { color:#475569; min-width:80px; }
-    .log-level { min-width:50px; font-weight:700; }
+    .log-time  { color:#475569; min-width:80px; flex-shrink:0; }
+    .log-level { min-width:52px; font-weight:700; flex-shrink:0; }
     .log-level.ERROR { color:#ef4444; }
     .log-level.WARN  { color:#f59e0b; }
     .log-level.INFO  { color:#22c55e; }
     .log-msg { color:#94a3b8; flex:1; word-break:break-all; }
-    .log-loading { display:flex; align-items:center; justify-content:center; height:100%; color:#475569; font-size:13px; gap:8px; }
-    .spinner { width:16px; height:16px; border:2px solid #2d3148; border-top-color:#3b82f6; border-radius:50%; animation:spin 0.8s linear infinite; }
-    .log-error { padding:12px; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:8px; color:#f87171; font-size:12px; margin-bottom:8px; }
+    .log-loading { display:flex; align-items:center; justify-content:center; height:100%; color:#475569; font-size:13px; gap:8px; flex-direction:column; }
+    .spinner { width:20px; height:20px; border:2px solid #2d3148; border-top-color:#3b82f6; border-radius:50%; animation:spin 0.8s linear infinite; }
+    .log-error { padding:12px; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:8px; color:#f87171; font-size:12px; }
     .session-expired { padding:16px; background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.25); border-radius:8px; color:#fbbf24; font-size:13px; text-align:center; }
+    .log-filters { display:flex; gap:6px; margin-bottom:10px; align-items:center; flex-wrap:wrap; }
+    .filter-btn { padding:4px 10px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid #2d3148; background:#252840; color:#64748b; transition:all 0.15s; }
+    .filter-btn.active-ALL   { color:#e2e8f0; border-color:#3d4168; background:#2d3148; }
+    .filter-btn.active-INFO  { background:rgba(34,197,94,0.1);  color:#4ade80;  border-color:rgba(34,197,94,0.3); }
+    .filter-btn.active-WARN  { background:rgba(245,158,11,0.1); color:#fbbf24; border-color:rgba(245,158,11,0.3); }
+    .filter-btn.active-ERROR { background:rgba(239,68,68,0.1);  color:#f87171; border-color:rgba(239,68,68,0.3); }
+    /* Alarms */
     .alarm-row { display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid #1e2235; }
     .alarm-row:last-child { border-bottom:none; }
-    .alarm-left { display:flex; align-items:center; gap:12px; }
+    .alarm-left { display:flex; align-items:center; gap:12px; min-width:0; }
     .alarm-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
     .alarm-dot.ok    { background:#22c55e; box-shadow:0 0 6px #22c55e66; }
     .alarm-dot.alarm { background:#ef4444; box-shadow:0 0 6px #ef444466; animation:pulse 1s infinite; }
     .alarm-dot.insufficient { background:#f59e0b; }
     .alarm-name { font-size:13px; font-weight:500; color:#e2e8f0; }
-    .alarm-desc { font-size:11px; color:#475569; margin-top:2px; }
-    .alarm-badge { font-size:11px; padding:3px 10px; border-radius:20px; font-weight:600; }
+    .alarm-desc { font-size:11px; color:#475569; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:300px; }
+    .alarm-badge { font-size:11px; padding:3px 10px; border-radius:20px; font-weight:600; flex-shrink:0; margin-left:8px; }
     .alarm-badge.ok           { background:rgba(34,197,94,0.15);  color:#4ade80; }
     .alarm-badge.alarm        { background:rgba(239,68,68,0.15);  color:#f87171; }
     .alarm-badge.insufficient { background:rgba(245,158,11,0.15); color:#fbbf24; }
+    /* Bars */
     .bar-row { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
     .bar-label { font-size:12px; color:#64748b; min-width:130px; }
     .bar-track { flex:1; height:8px; background:#252840; border-radius:4px; overflow:hidden; }
     .bar-fill  { height:100%; border-radius:4px; transition:width 0.8s cubic-bezier(.4,0,.2,1); }
     .bar-value { font-size:12px; color:#94a3b8; min-width:40px; text-align:right; }
     .email-row { display:flex; align-items:center; gap:10px; padding:10px 12px; background:#252840; border-radius:8px; font-size:13px; color:#94a3b8; margin-bottom:8px; }
-    .aws-link { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#60a5fa; text-decoration:none; padding:6px 12px; background:rgba(59,130,246,0.1); border:1px solid rgba(59,130,246,0.2); border-radius:8px; transition:all .15s; }
-    .aws-link:hover { background:rgba(59,130,246,0.2); }
-    .log-filters { display:flex; gap:6px; margin-bottom:10px; align-items:center; }
-    .filter-btn { padding:4px 10px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid #2d3148; background:#252840; color:#64748b; transition:all 0.15s; }
-    .filter-btn.active-ALL   { color:#e2e8f0; border-color:#3d4168; }
-    .filter-btn.active-INFO  { background:rgba(34,197,94,0.1);  color:#4ade80;  border-color:rgba(34,197,94,0.3); }
-    .filter-btn.active-WARN  { background:rgba(245,158,11,0.1); color:#fbbf24; border-color:rgba(245,158,11,0.3); }
-    .filter-btn.active-ERROR { background:rgba(239,68,68,0.1);  color:#f87171; border-color:rgba(239,68,68,0.3); }
+    /* AWS access buttons */
+    .aws-buttons-grid { display:flex; flex-wrap:wrap; gap:10px; }
+    .aws-btn { display:inline-flex; align-items:center; gap:8px; padding:10px 16px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; text-decoration:none; border:1px solid rgba(245,158,11,0.25); background:rgba(245,158,11,0.08); color:#fbbf24; transition:all .2s; }
+    .aws-btn:hover { background:rgba(245,158,11,0.18); border-color:rgba(245,158,11,0.5); color:#fde68a; transform:translateY(-1px); }
+    /* Toast */
+    #toast { position:fixed; bottom:24px; right:24px; padding:12px 20px; border-radius:10px; font-size:13px; font-weight:500; z-index:9999; transition:all 0.3s; opacity:0; pointer-events:none; max-width:340px; }
+    #toast.show { opacity:1; pointer-events:auto; }
+    #toast.success { background:#0d2d0d; border:1px solid #166534; color:#4ade80; }
+    #toast.error   { background:#2d0d0d; border:1px solid #991b1b; color:#f87171; }
+    #toast.info    { background:#0d1a2d; border:1px solid #1d4ed8; color:#60a5fa; }
     canvas { width:100%; display:block; }
     ::-webkit-scrollbar { width:6px; }
     ::-webkit-scrollbar-track { background:transparent; }
     ::-webkit-scrollbar-thumb { background:#2d3148; border-radius:3px; }
-    @media(max-width:900px) { .sidebar{display:none;} .main{margin-left:0;padding:1rem;} .grid4{grid-template-columns:repeat(2,1fr);} .grid2{grid-template-columns:1fr;} }
+    @media(max-width:960px) { .sidebar{display:none;} .main{margin-left:0;padding:1rem;} .grid4{grid-template-columns:repeat(2,1fr);} .grid2{grid-template-columns:1fr;} }
   </style>
 </head>
 <body>
 
+<!-- ══ SIDEBAR ══ -->
 <nav class="sidebar">
   <div class="sidebar-logo">
     <div class="logo-icon">🛡️</div>
@@ -117,14 +136,20 @@
       <div class="logo-sub">PFA DevSecOps</div>
     </div>
   </div>
-  <div class="nav-section">Monitoring</div>
-  <a class="nav-item active">📊 Vue générale</a>
-  <a class="nav-item" onclick="document.getElementById('logs-section').scrollIntoView({behavior:'smooth'})">📋 Logs ECS</a>
-  <a class="nav-item" onclick="document.getElementById('alarms-section').scrollIntoView({behavior:'smooth'})">🔔 Alarmes</a>
-  <div class="nav-section">AWS</div>
-  <a class="nav-item" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=SOC-Security-Dashboard" target="_blank">📈 CloudWatch</a>
-  <a class="nav-item" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fecs$252Fdevsecops" target="_blank">📋 Logs ECS</a>
-  <a class="nav-item" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#alarmsV2:" target="_blank">🔔 Alarmes</a>
+
+  <div class="nav-section">Navigation</div>
+  <button class="nav-item active" onclick="scrollTo('top-section')">📊 Vue générale</button>
+  <button class="nav-item" onclick="scrollTo('logs-section')">📋 Logs ECS</button>
+  <button class="nav-item" onclick="scrollTo('alarms-section')">🔔 Alarmes</button>
+  <button class="nav-item" onclick="scrollTo('resources-section')">🖥️ Ressources ECS</button>
+
+  <div class="nav-section">Ouvrir dans AWS</div>
+  <a class="aws-nav-btn" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=SOC-Security-Dashboard" target="_blank" rel="noopener">📈 Dashboard CloudWatch ↗</a>
+  <a class="aws-nav-btn" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fecs$252Fdevsecops" target="_blank" rel="noopener">📋 Logs /ecs/devsecops ↗</a>
+  <a class="aws-nav-btn" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#alarmsV2:" target="_blank" rel="noopener">🔔 Alarmes CloudWatch ↗</a>
+  <a class="aws-nav-btn" href="https://us-east-1.console.aws.amazon.com/ecs/v2/clusters/devsecops-cluster/services" target="_blank" rel="noopener">🖥️ ECS Services ↗</a>
+  <a class="aws-nav-btn" href="https://us-east-1.console.aws.amazon.com/sns/v3/home?region=us-east-1#/topics" target="_blank" rel="noopener">📧 SNS Topics ↗</a>
+
   <div class="sidebar-bottom">
     <div class="status-badge">
       <div class="dot-pulse"></div>
@@ -137,8 +162,11 @@
   </div>
 </nav>
 
+<!-- ══ MAIN ══ -->
 <main class="main">
-  <div class="topbar">
+
+  <!-- Topbar -->
+  <div class="topbar" id="top-section">
     <div>
       <div class="topbar-title">Security Operations Center</div>
       <div class="topbar-sub">
@@ -153,16 +181,17 @@
     </div>
   </div>
 
+  <!-- Métriques -->
   <div class="grid4">
     <div class="metric-card red">
       <div class="metric-icon red">⚠️</div>
-      <div class="metric-label">Erreurs ECS (1h)</div>
+      <div class="metric-label">Erreurs ECS (3h)</div>
       <div class="metric-value red" id="m-errors">—</div>
       <div class="metric-trend" id="t-errors">Chargement…</div>
     </div>
     <div class="metric-card amber">
       <div class="metric-icon amber">🔒</div>
-      <div class="metric-label">Accès refusés (1h)</div>
+      <div class="metric-label">Accès refusés (3h)</div>
       <div class="metric-value amber" id="m-unauth">—</div>
       <div class="metric-trend" id="t-unauth">Chargement…</div>
     </div>
@@ -180,86 +209,105 @@
     </div>
   </div>
 
+  <!-- Chart + Alarmes -->
   <div class="grid2">
     <div class="card">
       <div class="card-header">
         <div class="card-title">📈 Activité sécurité (temps réel)</div>
-        <span style="font-size:11px;color:#475569;">Canvas natif — pas de CDN</span>
+        <span style="font-size:11px;color:#475569;">Refresh 30s</span>
       </div>
-      <!-- BUG 1 FIX: canvas natif, zéro dépendance externe -->
       <canvas id="chart" height="160"></canvas>
     </div>
 
     <div class="card" id="alarms-section">
       <div class="card-header">
         <div class="card-title">🔔 Alarmes CloudWatch</div>
-        <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#alarmsV2:" target="_blank">Voir AWS ↗</a>
+        <div class="card-actions">
+          <button class="btn" onclick="fetchAlarms()" title="Recharger les alarmes">↻</button>
+          <a class="btn btn-aws" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#alarmsV2:" target="_blank" rel="noopener">Voir dans AWS ↗</a>
+        </div>
       </div>
       <div id="alarms-container">
-        <div class="log-loading"><div class="spinner"></div>Chargement des alarmes…</div>
+        <div class="log-loading"><div class="spinner"></div><span>Chargement des alarmes…</span></div>
       </div>
     </div>
   </div>
 
+  <!-- Logs -->
   <div class="card" id="logs-section">
     <div class="card-header">
       <div class="card-title">
         📋 Logs CloudWatch — <code style="font-size:11px;color:#475569;">/ecs/devsecops</code>
-        <span id="logs-source-badge" class="source-badge source-mock" style="margin-left:8px;">⏳</span>
+        <span id="logs-source-badge" class="source-badge source-mock" style="margin-left:4px;">⏳</span>
       </div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn" onclick="clearLogs()">🗑️ Vider</button>
-        <button class="btn" onclick="fetchLogs()">↻ Recharger</button>
-        <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fecs$252Fdevsecops" target="_blank">CloudWatch ↗</a>
+      <div class="card-actions">
+        <button class="filter-btn" onclick="clearLogs()">🗑️ Vider</button>
+        <button class="filter-btn" onclick="fetchLogs()">↻ Recharger</button>
+        <a class="btn btn-aws" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fecs$252Fdevsecops" target="_blank" rel="noopener">Ouvrir dans CloudWatch ↗</a>
       </div>
     </div>
     <div class="log-filters">
       <button class="filter-btn active-ALL" id="f-ALL"   onclick="setFilter('ALL')">Tous</button>
-      <button class="filter-btn" id="f-INFO"  onclick="setFilter('INFO')">INFO</button>
-      <button class="filter-btn" id="f-WARN"  onclick="setFilter('WARN')">WARN</button>
-      <button class="filter-btn" id="f-ERROR" onclick="setFilter('ERROR')">ERROR</button>
+      <button class="filter-btn"            id="f-INFO"  onclick="setFilter('INFO')">INFO</button>
+      <button class="filter-btn"            id="f-WARN"  onclick="setFilter('WARN')">WARN</button>
+      <button class="filter-btn"            id="f-ERROR" onclick="setFilter('ERROR')">ERROR</button>
       <span style="margin-left:auto;font-size:11px;color:#475569;" id="log-count"></span>
     </div>
     <div class="log-container" id="log-container">
-      <div class="log-loading"><div class="spinner"></div>Connexion à CloudWatch…</div>
+      <div class="log-loading"><div class="spinner"></div><span>Connexion à CloudWatch…</span></div>
     </div>
   </div>
 
-  <div class="grid2">
+  <!-- Ressources + SNS -->
+  <div class="grid2" id="resources-section">
     <div class="card">
-      <div class="card-header"><div class="card-title">🖥️ Ressources ECS</div></div>
+      <div class="card-header">
+        <div class="card-title">🖥️ Ressources ECS</div>
+        <a class="btn btn-aws" href="https://us-east-1.console.aws.amazon.com/ecs/v2/clusters/devsecops-cluster/services" target="_blank" rel="noopener">ECS ↗</a>
+      </div>
       <div class="bar-row"><span class="bar-label">CPU</span><div class="bar-track"><div class="bar-fill" id="bar-cpu" style="width:0%;background:#3b82f6;"></div></div><span class="bar-value" id="bv-cpu">—</span></div>
       <div class="bar-row"><span class="bar-label">Mémoire</span><div class="bar-track"><div class="bar-fill" id="bar-mem" style="width:0%;background:#8b5cf6;"></div></div><span class="bar-value" id="bv-mem">—</span></div>
-      <div class="bar-row"><span class="bar-label">Erreurs (1h)</span><div class="bar-track"><div class="bar-fill" id="bar-err" style="width:0%;background:#ef4444;"></div></div><span class="bar-value" id="bv-err">—</span></div>
+      <div class="bar-row"><span class="bar-label">Erreurs (3h)</span><div class="bar-track"><div class="bar-fill" id="bar-err" style="width:0%;background:#ef4444;"></div></div><span class="bar-value" id="bv-err">—</span></div>
       <div class="bar-row"><span class="bar-label">Accès refusés</span><div class="bar-track"><div class="bar-fill" id="bar-unauth" style="width:0%;background:#f59e0b;"></div></div><span class="bar-value" id="bv-unauth">—</span></div>
     </div>
+
     <div class="card">
       <div class="card-header">
         <div class="card-title">📧 Notifications SNS</div>
-        <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/sns/v3/home?region=us-east-1#/topics" target="_blank">SNS ↗</a>
+        <a class="btn btn-aws" href="https://us-east-1.console.aws.amazon.com/sns/v3/home?region=us-east-1#/topics" target="_blank" rel="noopener">SNS ↗</a>
       </div>
       <div style="font-size:11px;color:#475569;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Topic: soc-alerts</div>
       <div class="email-row">✉️ <span>wassimhouiechri902@gmail.com</span><span style="margin-left:auto;font-size:11px;color:#4ade80;">✓ Confirmé</span></div>
       <div class="email-row">✉️ <span>omarmekki966@gmail.com</span><span style="margin-left:auto;font-size:11px;color:#4ade80;">✓ Confirmé</span></div>
+      <div style="margin-top:14px;">
+        <button class="btn btn-primary" style="width:100%;justify-content:center;" id="test-btn-2" onclick="sendTestAlert()">
+          🚨 Envoyer alerte de test SNS
+        </button>
+      </div>
     </div>
   </div>
 
+  <!-- Accès directs AWS — vrais boutons -->
   <div class="card">
-    <div class="card-header"><div class="card-title">🔗 Accès directs AWS</div></div>
-    <div style="display:flex;flex-wrap:wrap;gap:10px;">
-      <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=SOC-Security-Dashboard" target="_blank">📊 Dashboard CloudWatch</a>
-      <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fecs$252Fdevsecops" target="_blank">📋 Logs /ecs/devsecops</a>
-      <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#alarmsV2:" target="_blank">🔔 Alarmes CloudWatch</a>
-      <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/ecs/v2/clusters/devsecops-cluster/services" target="_blank">🖥️ ECS Services</a>
-      <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/sns/v3/home?region=us-east-1#/topics" target="_blank">📧 SNS Topics</a>
+    <div class="card-header">
+      <div class="card-title">🔗 Accès directs AWS Console</div>
+    </div>
+    <div class="aws-buttons-grid">
+      <a class="aws-btn" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=SOC-Security-Dashboard" target="_blank" rel="noopener">📊 Dashboard CloudWatch ↗</a>
+      <a class="aws-btn" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fecs$252Fdevsecops" target="_blank" rel="noopener">📋 Logs /ecs/devsecops ↗</a>
+      <a class="aws-btn" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#alarmsV2:" target="_blank" rel="noopener">🔔 Alarmes CloudWatch ↗</a>
+      <a class="aws-btn" href="https://us-east-1.console.aws.amazon.com/ecs/v2/clusters/devsecops-cluster/services" target="_blank" rel="noopener">🖥️ ECS Services ↗</a>
+      <a class="aws-btn" href="https://us-east-1.console.aws.amazon.com/sns/v3/home?region=us-east-1#/topics" target="_blank" rel="noopener">📧 SNS Topics ↗</a>
+      <a class="aws-btn" href="https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-1#/roles" target="_blank" rel="noopener">🔑 IAM Roles ↗</a>
     </div>
   </div>
+
 </main>
 
+<div id="toast"></div>
+
 <script>
-// ═══════════════════════════════════════════════════
-//  BUG 1 FIX — Chart canvas natif, ZÉRO CDN externe
-// ═══════════════════════════════════════════════════
+// ══ CHART ══
 const chartLabels = [], chartErrors = [], chartWarns = [];
 let canvasEl, chartCtx;
 
@@ -267,260 +315,230 @@ function drawChart() {
   if (!chartCtx) return;
   const w = canvasEl.width, h = canvasEl.height;
   chartCtx.clearRect(0, 0, w, h);
-  const pad = {t:20, r:20, b:30, l:30};
-  const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+  const pad = {t:20,r:20,b:30,l:35};
+  const cw = w-pad.l-pad.r, ch = h-pad.t-pad.b;
   const n = chartLabels.length;
-  if (n < 2) { chartCtx.fillStyle='#475569'; chartCtx.font='12px sans-serif'; chartCtx.fillText('En attente de données…', w/2-60, h/2); return; }
-
-  // Grid
-  chartCtx.strokeStyle = '#1e2235'; chartCtx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = pad.t + (ch/4)*i;
-    chartCtx.beginPath(); chartCtx.moveTo(pad.l, y); chartCtx.lineTo(pad.l+cw, y); chartCtx.stroke();
+  if (n < 2) {
+    chartCtx.fillStyle='#475569'; chartCtx.font='12px sans-serif';
+    chartCtx.fillText('En attente de données…', w/2-70, h/2); return;
   }
-  // X labels
-  chartCtx.font = '10px monospace'; chartCtx.fillStyle = '#475569';
-  const step = Math.max(1, Math.floor(n/5));
-  for (let i = 0; i < n; i += step) {
-    const x = pad.l + (cw/(n-1))*i;
-    chartCtx.fillText(chartLabels[i], x-12, h-8);
-  }
-  // Errors line
-  chartCtx.strokeStyle = '#ef4444'; chartCtx.lineWidth = 2; chartCtx.beginPath();
-  for (let i = 0; i < n; i++) { const x=pad.l+(cw/(n-1))*i, y=pad.t+ch-(Math.min(chartErrors[i],4)/4)*ch; i===0?chartCtx.moveTo(x,y):chartCtx.lineTo(x,y); } chartCtx.stroke();
-  // Warns line
-  chartCtx.strokeStyle = '#f59e0b'; chartCtx.lineWidth = 2; chartCtx.beginPath();
-  for (let i = 0; i < n; i++) { const x=pad.l+(cw/(n-1))*i, y=pad.t+ch-(Math.min(chartWarns[i],4)/4)*ch; i===0?chartCtx.moveTo(x,y):chartCtx.lineTo(x,y); } chartCtx.stroke();
-  // Legend
-  chartCtx.fillStyle='#ef4444'; chartCtx.fillRect(w-130,8,12,3);
-  chartCtx.fillStyle='#94a3b8'; chartCtx.fillText('Erreurs',w-114,14);
-  chartCtx.fillStyle='#f59e0b'; chartCtx.fillRect(w-66,8,12,3);
-  chartCtx.fillStyle='#94a3b8'; chartCtx.fillText('Warnings',w-50,14);
+  chartCtx.strokeStyle='#1e2235'; chartCtx.lineWidth=1;
+  for (let i=0;i<=4;i++){const y=pad.t+(ch/4)*i;chartCtx.beginPath();chartCtx.moveTo(pad.l,y);chartCtx.lineTo(pad.l+cw,y);chartCtx.stroke();}
+  chartCtx.font='10px monospace'; chartCtx.fillStyle='#475569';
+  const step=Math.max(1,Math.floor(n/5));
+  for(let i=0;i<n;i+=step){const x=pad.l+(cw/(n-1))*i;chartCtx.fillText(chartLabels[i],x-12,h-8);}
+  chartCtx.strokeStyle='#ef4444';chartCtx.lineWidth=2;chartCtx.beginPath();
+  for(let i=0;i<n;i++){const x=pad.l+(cw/(n-1))*i,y=pad.t+ch-(Math.min(chartErrors[i],4)/4)*ch;i===0?chartCtx.moveTo(x,y):chartCtx.lineTo(x,y);}chartCtx.stroke();
+  chartCtx.strokeStyle='#f59e0b';chartCtx.lineWidth=2;chartCtx.beginPath();
+  for(let i=0;i<n;i++){const x=pad.l+(cw/(n-1))*i,y=pad.t+ch-(Math.min(chartWarns[i],4)/4)*ch;i===0?chartCtx.moveTo(x,y):chartCtx.lineTo(x,y);}chartCtx.stroke();
+  chartCtx.fillStyle='#ef4444';chartCtx.fillRect(w-130,8,12,3);chartCtx.fillStyle='#94a3b8';chartCtx.fillText('Erreurs',w-114,14);
+  chartCtx.fillStyle='#f59e0b';chartCtx.fillRect(w-66,8,12,3);chartCtx.fillStyle='#94a3b8';chartCtx.fillText('Warnings',w-50,14);
 }
 
 function pushChart(events) {
   const t = nowStr().slice(0,5);
-  const errs  = events.filter(e=>e.level==='ERROR').length;
-  const warns = events.filter(e=>e.level==='WARN').length;
-  chartLabels.push(t); chartErrors.push(errs); chartWarns.push(warns);
-  if (chartLabels.length > 15) { chartLabels.shift(); chartErrors.shift(); chartWarns.shift(); }
+  chartLabels.push(t); chartErrors.push(events.filter(e=>e.level==='ERROR').length); chartWarns.push(events.filter(e=>e.level==='WARN').length);
+  if(chartLabels.length>15){chartLabels.shift();chartErrors.shift();chartWarns.shift();}
   drawChart();
 }
 
-// ═══════════════════════════════════════════════════
-//  STATE
-// ═══════════════════════════════════════════════════
-let allLogs = [], currentFilter = 'ALL';
+// ══ STATE ══
+let allLogs=[], currentFilter='ALL';
 
 function nowStr() {
-  const d = new Date();
+  const d=new Date();
   return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')+':'+d.getSeconds().toString().padStart(2,'0');
 }
 
-function setSourceBadge(ok, msg) {
-  const b = document.getElementById('data-source-badge');
-  const lb = document.getElementById('logs-source-badge');
-  if (ok) {
-    b.className='source-badge source-live'; b.textContent='🟢 Live CloudWatch';
-    lb.className='source-badge source-live'; lb.textContent='🟢 Live';
-  } else {
-    b.className='source-badge source-error'; b.textContent='🔴 '+(msg||'Erreur');
-    lb.className='source-badge source-error'; lb.textContent='🔴 Erreur';
-  }
+function scrollTo(id) {
+  const el=document.getElementById(id);
+  if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
-// ═══════════════════════════════════════════════════
-//  BUG 2 FIX — safeJson : détecte session expirée
-//  Si le serveur redirige vers /login (HTML, pas JSON),
-//  res.json() planterait. On vérifie content-type d'abord.
-// ═══════════════════════════════════════════════════
+// ══ TOAST ══
+let toastTimer;
+function showToast(msg, type='info') {
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='show '+type;
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{t.className='';},4500);
+}
+
+// ══ BADGES ══
+function setSourceBadge(ok, msg) {
+  const b=document.getElementById('data-source-badge'), lb=document.getElementById('logs-source-badge');
+  if(ok){b.className='source-badge source-live';b.textContent='🟢 Live CloudWatch';lb.className='source-badge source-live';lb.textContent='🟢 Live';}
+  else{b.className='source-badge source-error';b.textContent='🔴 '+(msg||'Erreur');lb.className='source-badge source-error';lb.textContent='🔴 Erreur';}
+}
+
+// ══ safeJson ══
 async function safeJson(url, options) {
-  const res = await fetch(url, options);
-  const ct = res.headers.get('content-type') || '';
-  if (!ct.includes('application/json')) {
-    // Session expirée → Flask a renvoyé un redirect HTML vers /login
-    if (res.status === 401 || res.redirected || res.url.includes('/login')) {
-      showSessionExpired();
-    }
-    return null;  // signale l'échec sans planter
+  const res=await fetch(url,options);
+  const ct=res.headers.get('content-type')||'';
+  if(!ct.includes('application/json')){
+    if(res.status===401||res.redirected||res.url.includes('/login'))showSessionExpired();
+    return null;
   }
   return res.json();
 }
 
 function showSessionExpired() {
-  document.querySelectorAll('.log-container, #alarms-container').forEach(el => {
-    el.innerHTML = `<div class="session-expired">
-      ⏰ Session expirée — <a href="/login" style="color:#fbbf24;">Reconnectez-vous</a>
-    </div>`;
+  document.querySelectorAll('.log-container,#alarms-container').forEach(el=>{
+    el.innerHTML=`<div class="session-expired">⏰ Session expirée — <a href="/login" style="color:#fbbf24;">Reconnectez-vous</a></div>`;
   });
-  setSourceBadge(false, 'Session expirée');
+  setSourceBadge(false,'Session expirée');
 }
 
-// ═══════════════════════════════════════════════════
-//  LOGS RENDER
-// ═══════════════════════════════════════════════════
+// ══ RENDER LOGS ══
 function renderLogs() {
-  const container = document.getElementById('log-container');
-  const filtered = currentFilter === 'ALL' ? allLogs : allLogs.filter(e=>e.level===currentFilter);
-  document.getElementById('log-count').textContent = filtered.length + ' événement' + (filtered.length!==1?'s':'');
-  if (filtered.length === 0) {
-    container.innerHTML = '<div style="color:#475569;padding:20px;text-align:center;font-size:13px;">Aucun log pour ce filtre</div>';
-    return;
-  }
-  // Vérifier si l'utilisateur est déjà tout en bas (pour ne pas forcer le scroll s'il remonte)
-  const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
-  container.innerHTML = '';
-  filtered.forEach(e => {
-    const row = document.createElement('div'); row.className = 'log-row';
-    const safeMsg = e.msg.replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    row.innerHTML = `<span class="log-time">${e.time}</span><span class="log-level ${e.level}">${e.level}</span><span class="log-msg">${safeMsg}</span>`;
+  const container=document.getElementById('log-container');
+  const filtered=currentFilter==='ALL'?allLogs:allLogs.filter(e=>e.level===currentFilter);
+  document.getElementById('log-count').textContent=filtered.length+' événement'+(filtered.length!==1?'s':'');
+  if(filtered.length===0){container.innerHTML='<div style="color:#475569;padding:20px;text-align:center;font-size:13px;">Aucun log pour ce filtre</div>';return;}
+  const atBottom=container.scrollHeight-container.scrollTop-container.clientHeight<40;
+  container.innerHTML='';
+  filtered.forEach(e=>{
+    const row=document.createElement('div');row.className='log-row';
+    const safeMsg=e.msg.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    row.innerHTML=`<span class="log-time">${e.time}</span><span class="log-level ${e.level}">${e.level}</span><span class="log-msg">${safeMsg}</span>`;
     container.appendChild(row);
   });
-  // Auto-scroll vers le bas uniquement si on était déjà en bas
-  if (atBottom) container.scrollTop = container.scrollHeight;
+  if(atBottom) container.scrollTop=container.scrollHeight;
 }
 
 function setFilter(level) {
-  currentFilter = level;
-  ['ALL','INFO','WARN','ERROR'].forEach(k => { document.getElementById('f-'+k).className='filter-btn'; });
+  currentFilter=level;
+  ['ALL','INFO','WARN','ERROR'].forEach(k=>{document.getElementById('f-'+k).className='filter-btn';});
   document.getElementById('f-'+level).className='filter-btn active-'+level;
   renderLogs();
 }
 
-function clearLogs() { allLogs=[]; renderLogs(); }
+function clearLogs() {
+  allLogs=[];
+  document.getElementById('log-container').innerHTML='<div style="color:#475569;padding:20px;text-align:center;font-size:13px;">Logs vidés</div>';
+  document.getElementById('log-count').textContent='';
+}
 
-// ═══════════════════════════════════════════════════
-//  API CALLS
-// ═══════════════════════════════════════════════════
+// ══ FETCH LOGS ══
 async function fetchLogs() {
-  const container = document.getElementById('log-container');
+  const container=document.getElementById('log-container');
   try {
-    const data = await safeJson('/api/soc/logs');
-    if (!data) return;
-
-    if (!data.ok) {
-      setSourceBadge(false, data.error);
-      // BUG 3 FIX — log group vide = pas une erreur, juste "aucun log encore"
-      if (data.error && data.error.includes('ResourceNotFoundException')) {
-        container.innerHTML = `<div style="color:#475569;padding:20px;text-align:center;font-size:13px;">
-          📭 Le log group <code>/ecs/devsecops</code> n'a pas encore de streams.<br>
-          <span style="font-size:11px;margin-top:6px;display:block;">L'app doit avoir tourné au moins une fois pour générer des logs.</span>
-        </div>`;
-      } else if (allLogs.length === 0) {
-        container.innerHTML = `<div class="log-error">⚠️ CloudWatch : ${data.error}<br><span style="font-size:10px;opacity:.7;">Vérifiez que le IAM Role ECS a la permission logs:FilterLogEvents</span></div>`;
+    const data=await safeJson('/api/soc/logs');
+    if(!data) return;
+    if(!data.ok) {
+      setSourceBadge(false,data.error);
+      if(data.error&&data.error.includes('ResourceNotFoundException')) {
+        if(allLogs.length===0) container.innerHTML=`<div class="log-loading"><span style="font-size:24px;">📭</span><span>Le log group <code>/ecs/devsecops</code> n'a pas encore de streams.</span><span style="font-size:11px;color:#475569;">L'app doit avoir tourné au moins une fois.</span></div>`;
+      } else if(allLogs.length===0) {
+        container.innerHTML=`<div class="log-error">⚠️ CloudWatch : ${data.error}<br><span style="font-size:10px;opacity:.7;">Vérifiez que le IAM Role ECS a logs:FilterLogEvents</span></div>`;
       }
       return;
     }
-
     setSourceBadge(true);
-
-    // BUG 4 FIX — fusionner les nouveaux logs sans écraser (dedup par id)
-    if (data.events.length > 0) {
-      const existingIds = new Set(allLogs.map(e => e.id));
-      const newEvents = data.events.filter(e => !existingIds.has(e.id));
-      if (newEvents.length > 0) {
-        allLogs = [...allLogs, ...newEvents];
-        // Garder les 200 derniers max
-        if (allLogs.length > 200) allLogs = allLogs.slice(-200);
-        renderLogs();
-        pushChart(newEvents);
+    if(data.events.length>0) {
+      const existingIds=new Set(allLogs.map(e=>e.id));
+      const newEvents=data.events.filter(e=>!existingIds.has(e.id));
+      if(newEvents.length>0) {
+        allLogs=[...allLogs,...newEvents];
+        if(allLogs.length>200) allLogs=allLogs.slice(-200);
+        renderLogs(); pushChart(newEvents);
       }
-    } else if (allLogs.length === 0) {
-      container.innerHTML = `<div style="color:#475569;padding:20px;text-align:center;font-size:13px;">
-        📭 Aucun log dans les 3 dernières heures.<br>
-        <span style="font-size:11px;margin-top:6px;display:block;">Le groupe existe, en attente d'activité.</span>
-      </div>`;
+    } else if(allLogs.length===0) {
+      container.innerHTML=`<div class="log-loading"><span style="font-size:24px;">📭</span><span>Aucun log dans les 3 dernières heures.</span><span style="font-size:11px;color:#475569;">Le groupe existe, en attente d'activité ECS.</span></div>`;
     }
-    // Si allLogs.length > 0 et data.events vide → on garde ce qu'on a affiché
-
-  } catch (err) {
-    setSourceBadge(false, 'Réseau');
-    if (allLogs.length === 0) {
-      container.innerHTML = `<div class="log-error">⚠️ Erreur réseau : ${err.message}</div>`;
-    }
+  } catch(err) {
+    setSourceBadge(false,'Réseau');
+    if(allLogs.length===0) container.innerHTML=`<div class="log-error">⚠️ Erreur réseau : ${err.message}</div>`;
   }
 }
 
+// ══ FETCH METRICS ══
 async function fetchMetrics() {
   try {
-    const data = await safeJson('/api/soc/metrics');
-    if (!data || !data.ok) return;
-
-    const set = (id, val, unit='%') => {
-      document.getElementById(id).textContent = val + unit;
+    const data=await safeJson('/api/soc/metrics');
+    if(!data||!data.ok) return;
+    document.getElementById('m-cpu').textContent=data.cpu+'%';
+    document.getElementById('m-mem').textContent=data.mem+'%';
+    document.getElementById('m-errors').textContent=data.errors;
+    document.getElementById('m-unauth').textContent=data.unauth;
+    document.getElementById('t-errors').textContent=data.errors>0?'⚠️ '+data.errors+' erreur(s)':'✅ Aucune erreur';
+    document.getElementById('t-unauth').textContent=data.unauth>0?'⚠️ '+data.unauth+' accès refusé(s)':'✅ Aucun accès refusé';
+    const setBar=(id,bvId,val,max,unit='')=>{
+      document.getElementById(id).style.width=Math.min(val,max)/max*100+'%';
+      document.getElementById(bvId).textContent=val+unit;
     };
-    set('m-cpu', data.cpu); set('m-mem', data.mem);
-    document.getElementById('m-errors').textContent = data.errors;
-    document.getElementById('m-unauth').textContent = data.unauth;
-    document.getElementById('t-errors').textContent = data.errors>0 ? '⚠️ '+data.errors+' erreur(s)' : '✅ Aucune erreur';
-    document.getElementById('t-unauth').textContent = data.unauth>0 ? '⚠️ '+data.unauth+' accès refusé(s)' : '✅ Aucun accès refusé';
-
-    const setBar = (id, bvId, val, max=100) => {
-      document.getElementById(id).style.width = Math.min(val,max)/max*100+'%';
-      document.getElementById(bvId).textContent = val+(id.includes('cpu')||id.includes('mem')?'%':'');
-    };
-    setBar('bar-cpu','bv-cpu',data.cpu); setBar('bar-mem','bv-mem',data.mem);
+    setBar('bar-cpu','bv-cpu',data.cpu,100,'%'); setBar('bar-mem','bv-mem',data.mem,100,'%');
     setBar('bar-err','bv-err',data.errors,20); setBar('bar-unauth','bv-unauth',data.unauth,20);
-
-  } catch(err) { console.warn('fetchMetrics:', err); }
+  } catch(err){console.warn('fetchMetrics:',err);}
 }
 
+// ══ FETCH ALARMS ══
 async function fetchAlarms() {
-  const container = document.getElementById('alarms-container');
+  const container=document.getElementById('alarms-container');
   try {
-    const data = await safeJson('/api/soc/alarms');
-    if (!data) return;
-    if (!data.ok) { container.innerHTML=`<div class="log-error">⚠️ ${data.error}</div>`; return; }
-    if (!data.alarms.length) { container.innerHTML='<div style="color:#475569;font-size:13px;padding:12px 0;">Aucune alarme configurée</div>'; return; }
-
-    container.innerHTML = '';
-    data.alarms.forEach(alarm => {
-      const state = alarm.state.toLowerCase();
-      const css   = state==='ok'?'ok':state==='alarm'?'alarm':'insufficient';
-      const label = state==='ok'?'OK':state==='alarm'?'ALARM':'INSUFF.';
-      const row = document.createElement('div'); row.className='alarm-row';
-      row.innerHTML=`<div class="alarm-left"><div class="alarm-dot ${css}"></div><div><div class="alarm-name">${alarm.name}</div><div class="alarm-desc">${alarm.desc||alarm.reason||''}</div></div></div><span class="alarm-badge ${css}">${label}</span>`;
+    const data=await safeJson('/api/soc/alarms');
+    if(!data) return;
+    if(!data.ok){container.innerHTML=`<div class="log-error">⚠️ ${data.error}</div>`;return;}
+    if(!data.alarms.length){container.innerHTML='<div style="color:#475569;font-size:13px;padding:12px 0;">Aucune alarme configurée</div>';return;}
+    container.innerHTML='';
+    data.alarms.forEach(alarm=>{
+      const state=alarm.state.toLowerCase();
+      const css=state==='ok'?'ok':state==='alarm'?'alarm':'insufficient';
+      const label=state==='ok'?'OK':state==='alarm'?'ALARM':'INSUFF.';
+      const row=document.createElement('div'); row.className='alarm-row';
+      row.innerHTML=`<div class="alarm-left"><div class="alarm-dot ${css}"></div><div><div class="alarm-name">${alarm.name}</div><div class="alarm-desc" title="${alarm.desc||alarm.reason||''}">${alarm.desc||alarm.reason||''}</div></div></div><span class="alarm-badge ${css}">${label}</span>`;
       container.appendChild(row);
     });
-  } catch(err) { container.innerHTML=`<div class="log-error">⚠️ Réseau : ${err.message}</div>`; }
+  } catch(err){container.innerHTML=`<div class="log-error">⚠️ Réseau : ${err.message}</div>`;}
 }
 
+// ══ TEST ALERT — fonctionnel ══
 async function sendTestAlert() {
-  const btn = document.getElementById('test-btn');
-  btn.disabled=true; btn.textContent='⏳ Envoi…';
+  const btn1=document.getElementById('test-btn');
+  const btn2=document.getElementById('test-btn-2');
+  [btn1,btn2].forEach(b=>{if(b){b.disabled=true;b.textContent='⏳ Envoi en cours…';}});
   try {
-    const data = await safeJson('/api/soc/test-alert', {method:'POST'});
-    if (!data) { btn.textContent='❌ Session expirée'; }
-    else if (data.ok) { btn.textContent='✅ Alerte envoyée !'; }
-    else { btn.textContent='❌ '+data.error; }
-  } catch(e) { btn.textContent='❌ Réseau'; }
-  setTimeout(()=>{ btn.textContent='🚨 Test alerte'; btn.disabled=false; }, 3500);
+    const data=await safeJson('/api/soc/test-alert',{method:'POST'});
+    if(!data){
+      [btn1,btn2].forEach(b=>{if(b)b.textContent='❌ Session expirée';});
+      showToast('Session expirée, reconnectez-vous.','error');
+    } else if(data.ok){
+      [btn1,btn2].forEach(b=>{if(b)b.textContent='✅ Alerte envoyée !';});
+      showToast('✅ Alerte SNS envoyée avec succès aux abonnés !','success');
+    } else {
+      [btn1,btn2].forEach(b=>{if(b)b.textContent='❌ '+data.error;});
+      showToast('❌ '+data.error,'error');
+    }
+  } catch(e){
+    [btn1,btn2].forEach(b=>{if(b)b.textContent='❌ Erreur réseau';});
+    showToast('❌ Erreur réseau : '+e.message,'error');
+  }
+  setTimeout(()=>{
+    if(btn1){btn1.textContent='🚨 Test alerte';btn1.disabled=false;}
+    if(btn2){btn2.textContent='🚨 Envoyer alerte de test SNS';btn2.disabled=false;}
+  },4000);
 }
 
+// ══ REFRESH ALL ══
 async function refreshAll() {
   document.getElementById('last-update').textContent='Mise à jour: '+nowStr();
-  await Promise.all([fetchLogs(), fetchMetrics(), fetchAlarms()]);
+  await Promise.all([fetchLogs(),fetchMetrics(),fetchAlarms()]);
 }
 
-// ═══════════════════════════════════════════════════
-//  INIT
-// ═══════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', () => {
-  canvasEl  = document.getElementById('chart');
-  chartCtx  = canvasEl.getContext('2d');
-  canvasEl.width  = canvasEl.parentElement.clientWidth - 40 || 500;
-  canvasEl.height = 160;
+// ══ INIT ══
+document.addEventListener('DOMContentLoaded',()=>{
+  canvasEl=document.getElementById('chart');
+  chartCtx=canvasEl.getContext('2d');
+  canvasEl.width=canvasEl.parentElement.clientWidth-40||500;
+  canvasEl.height=160;
   drawChart();
-
-  refreshAll().then(() => {
-    // Scroll initial vers le bas après le premier chargement
-    const container = document.getElementById('log-container');
-    container.scrollTop = container.scrollHeight;
+  refreshAll().then(()=>{
+    const c=document.getElementById('log-container');
+    c.scrollTop=c.scrollHeight;
   });
-
-  setInterval(fetchLogs,    30_000);   // logs toutes les 30s
-  setInterval(fetchMetrics, 60_000);   // métriques toutes les 60s
-  setInterval(fetchAlarms,  60_000);   // alarmes toutes les 60s
+  setInterval(fetchLogs,30_000);
+  setInterval(fetchMetrics,60_000);
+  setInterval(fetchAlarms,60_000);
 });
 </script>
 </body>
