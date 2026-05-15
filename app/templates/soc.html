@@ -1,545 +1,1545 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>SOC — Security Operations Center</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
-    .sidebar { position: fixed; top: 0; left: 0; width: 230px; height: 100vh; background: #1a1d27; border-right: 1px solid #2d3148; padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: 6px; z-index: 100; overflow-y: auto; }
-    .sidebar-logo { display: flex; align-items: center; gap: 10px; padding: 0 0.5rem 1.5rem; border-bottom: 1px solid #2d3148; margin-bottom: 0.5rem; }
-    .logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, #3b82f6, #6366f1); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
-    .logo-text { font-size: 15px; font-weight: 600; color: #f1f5f9; }
-    .logo-sub  { font-size: 11px; color: #64748b; }
-    .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; font-size: 13px; color: #94a3b8; cursor: pointer; transition: all 0.15s; text-decoration: none; border: none; background: none; width: 100%; text-align: left; }
-    .nav-item:hover { background: #252840; color: #e2e8f0; }
-    .nav-item.active { background: #252840; color: #60a5fa; }
-    .nav-section { font-size: 10px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; padding: 12px 12px 4px; }
-    .sidebar-bottom { margin-top: auto; padding-top: 1rem; border-top: 1px solid #2d3148; }
-    .status-badge { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #0d1f0d; border: 1px solid #1a3d1a; border-radius: 8px; font-size: 12px; color: #4ade80; }
-    .dot-pulse { width: 8px; height: 8px; background: #4ade80; border-radius: 50%; animation: pulse 2s infinite; flex-shrink: 0; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .return-link { display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; color: #94a3b8; text-decoration: none; padding: 6px 12px; background: rgba(255,255,255,0.05); border: 1px solid #2d3148; border-radius: 8px; transition: all 0.15s; margin-top: 10px; }
-    .return-link:hover { background: #252840; color: #e2e8f0; }
-    /* AWS nav buttons in sidebar */
-    .aws-nav-btn { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; font-size: 12px; color: #60a5fa; cursor: pointer; transition: all 0.15s; text-decoration: none; border: 1px solid rgba(59,130,246,0.2); background: rgba(59,130,246,0.06); width: 100%; margin-bottom: 3px; }
-    .aws-nav-btn:hover { background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.4); color: #93c5fd; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SOC Dashboard — DevSecOps</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap');
 
-    .main { margin-left: 230px; padding: 2rem; min-height: 100vh; }
-    .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; flex-wrap: wrap; gap: 12px; }
-    .topbar-title { font-size: 20px; font-weight: 600; color: #f1f5f9; }
-    .topbar-sub   { font-size: 13px; color: #64748b; margin-top: 2px; }
-    .topbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid #2d3148; background: #1a1d27; color: #94a3b8; transition: all 0.15s; text-decoration: none; white-space: nowrap; }
-    .btn:hover { background: #252840; color: #e2e8f0; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-primary { background: #1d4ed8; border-color: #2563eb; color: #fff; }
-    .btn-primary:hover:not(:disabled) { background: #2563eb; }
-    .btn-aws { background: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.25); color: #fbbf24; }
-    .btn-aws:hover { background: rgba(245,158,11,0.18); border-color: rgba(245,158,11,0.5); color: #fde68a; }
-    .last-update { font-size: 12px; color: #475569; }
-    .source-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
-    .source-live  { background: rgba(34,197,94,0.12);  color: #4ade80;  border: 1px solid rgba(34,197,94,0.25); }
-    .source-mock  { background: rgba(245,158,11,0.12); color: #fbbf24;  border: 1px solid rgba(245,158,11,0.25); }
-    .source-error { background: rgba(239,68,68,0.12);  color: #f87171;  border: 1px solid rgba(239,68,68,0.25); }
-    .grid4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 1.5rem; }
-    .grid2 { display: grid; grid-template-columns: repeat(2,1fr); gap: 16px; margin-bottom: 1.5rem; }
-    .metric-card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 1.25rem; position: relative; overflow: hidden; }
-    .metric-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; border-radius:12px 12px 0 0; }
-    .metric-card.red::before   { background:#ef4444; }
-    .metric-card.amber::before { background:#f59e0b; }
-    .metric-card.blue::before  { background:#3b82f6; }
-    .metric-card.green::before { background:#22c55e; }
-    .metric-icon { width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px; margin-bottom:12px; }
-    .metric-icon.red   { background:rgba(239,68,68,0.15); }
-    .metric-icon.amber { background:rgba(245,158,11,0.15); }
-    .metric-icon.blue  { background:rgba(59,130,246,0.15); }
-    .metric-icon.green { background:rgba(34,197,94,0.15); }
-    .metric-label { font-size:12px; color:#64748b; margin-bottom:4px; }
-    .metric-value { font-size:28px; font-weight:700; line-height:1; }
-    .metric-value.red   { color:#ef4444; }
-    .metric-value.amber { color:#f59e0b; }
-    .metric-value.blue  { color:#60a5fa; }
-    .metric-value.green { color:#4ade80; }
-    .metric-trend { font-size:11px; color:#475569; margin-top:6px; }
-    .card { background:#1a1d27; border:1px solid #2d3148; border-radius:12px; padding:1.25rem; margin-bottom:16px; }
-    .card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem; flex-wrap: wrap; gap: 8px; }
-    .card-title { font-size:13px; font-weight:600; color:#94a3b8; display:flex; align-items:center; gap:8px; flex-wrap: wrap; }
-    .card-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    /* Logs */
-    .log-container { background:#0d0f17; border-radius:8px; padding:1rem; font-family:'Courier New',monospace; font-size:12px; height:360px; overflow-y:auto; display:flex; flex-direction:column; scroll-behavior:smooth; }
-    .log-row { display:flex; gap:10px; padding:3px 0; line-height:1.6; border-bottom:1px solid rgba(255,255,255,0.03); }
-    .log-time  { color:#475569; min-width:80px; flex-shrink:0; }
-    .log-level { min-width:52px; font-weight:700; flex-shrink:0; }
-    .log-level.ERROR { color:#ef4444; }
-    .log-level.WARN  { color:#f59e0b; }
-    .log-level.INFO  { color:#22c55e; }
-    .log-msg { color:#94a3b8; flex:1; word-break:break-all; }
-    .log-loading { display:flex; align-items:center; justify-content:center; height:100%; color:#475569; font-size:13px; gap:8px; flex-direction:column; }
-    .spinner { width:20px; height:20px; border:2px solid #2d3148; border-top-color:#3b82f6; border-radius:50%; animation:spin 0.8s linear infinite; }
-    .log-error { padding:12px; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:8px; color:#f87171; font-size:12px; }
-    .session-expired { padding:16px; background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.25); border-radius:8px; color:#fbbf24; font-size:13px; text-align:center; }
-    .log-filters { display:flex; gap:6px; margin-bottom:10px; align-items:center; flex-wrap:wrap; }
-    .filter-btn { padding:4px 10px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid #2d3148; background:#252840; color:#64748b; transition:all 0.15s; }
-    .filter-btn.active-ALL   { color:#e2e8f0; border-color:#3d4168; background:#2d3148; }
-    .filter-btn.active-INFO  { background:rgba(34,197,94,0.1);  color:#4ade80;  border-color:rgba(34,197,94,0.3); }
-    .filter-btn.active-WARN  { background:rgba(245,158,11,0.1); color:#fbbf24; border-color:rgba(245,158,11,0.3); }
-    .filter-btn.active-ERROR { background:rgba(239,68,68,0.1);  color:#f87171; border-color:rgba(239,68,68,0.3); }
-    /* Alarms */
-    .alarm-row { display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid #1e2235; }
-    .alarm-row:last-child { border-bottom:none; }
-    .alarm-left { display:flex; align-items:center; gap:12px; min-width:0; }
-    .alarm-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
-    .alarm-dot.ok    { background:#22c55e; box-shadow:0 0 6px #22c55e66; }
-    .alarm-dot.alarm { background:#ef4444; box-shadow:0 0 6px #ef444466; animation:pulse 1s infinite; }
-    .alarm-dot.insufficient { background:#f59e0b; }
-    .alarm-name { font-size:13px; font-weight:500; color:#e2e8f0; }
-    .alarm-desc { font-size:11px; color:#475569; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:300px; }
-    .alarm-badge { font-size:11px; padding:3px 10px; border-radius:20px; font-weight:600; flex-shrink:0; margin-left:8px; }
-    .alarm-badge.ok           { background:rgba(34,197,94,0.15);  color:#4ade80; }
-    .alarm-badge.alarm        { background:rgba(239,68,68,0.15);  color:#f87171; }
-    .alarm-badge.insufficient { background:rgba(245,158,11,0.15); color:#fbbf24; }
-    /* Bars */
-    .bar-row { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
-    .bar-label { font-size:12px; color:#64748b; min-width:130px; }
-    .bar-track { flex:1; height:8px; background:#252840; border-radius:4px; overflow:hidden; }
-    .bar-fill  { height:100%; border-radius:4px; transition:width 0.8s cubic-bezier(.4,0,.2,1); }
-    .bar-value { font-size:12px; color:#94a3b8; min-width:40px; text-align:right; }
-    .email-row { display:flex; align-items:center; gap:10px; padding:10px 12px; background:#252840; border-radius:8px; font-size:13px; color:#94a3b8; margin-bottom:8px; }
-    /* AWS access buttons */
-    .aws-buttons-grid { display:flex; flex-wrap:wrap; gap:10px; }
-    .aws-btn { display:inline-flex; align-items:center; gap:8px; padding:10px 16px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; text-decoration:none; border:1px solid rgba(245,158,11,0.25); background:rgba(245,158,11,0.08); color:#fbbf24; transition:all .2s; }
-    .aws-btn:hover { background:rgba(245,158,11,0.18); border-color:rgba(245,158,11,0.5); color:#fde68a; transform:translateY(-1px); }
-    /* Toast */
-    #toast { position:fixed; bottom:24px; right:24px; padding:12px 20px; border-radius:10px; font-size:13px; font-weight:500; z-index:9999; transition:all 0.3s; opacity:0; pointer-events:none; max-width:340px; }
-    #toast.show { opacity:1; pointer-events:auto; }
-    #toast.success { background:#0d2d0d; border:1px solid #166534; color:#4ade80; }
-    #toast.error   { background:#2d0d0d; border:1px solid #991b1b; color:#f87171; }
-    #toast.info    { background:#0d1a2d; border:1px solid #1d4ed8; color:#60a5fa; }
-    canvas { width:100%; display:block; }
-    ::-webkit-scrollbar { width:6px; }
-    ::-webkit-scrollbar-track { background:transparent; }
-    ::-webkit-scrollbar-thumb { background:#2d3148; border-radius:3px; }
-    @media(max-width:960px) { .sidebar{display:none;} .main{margin-left:0;padding:1rem;} .grid4{grid-template-columns:repeat(2,1fr);} .grid2{grid-template-columns:1fr;} }
-  </style>
+  :root {
+    --bg: #030a0e;
+    --bg2: #060f15;
+    --bg3: #0a1820;
+    --panel: #0d1f2d;
+    --border: #0e3a52;
+    --accent: #00d4ff;
+    --accent2: #00ff88;
+    --danger: #ff3366;
+    --warn: #ffaa00;
+    --muted: #2a5068;
+    --text: #b8d4e0;
+    --textdim: #4a7a90;
+    --green: #00ff88;
+    --red: #ff3366;
+    --yellow: #ffaa00;
+    --cyan: #00d4ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Rajdhani', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 40% at 20% 10%, rgba(0,212,255,0.04) 0%, transparent 60%),
+      radial-gradient(ellipse 50% 50% at 80% 90%, rgba(0,255,136,0.03) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* SCANLINE EFFECT */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px);
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(6,15,21,0.95);
+    backdrop-filter: blur(10px);
+  }
+
+  .header-left { display: flex; align-items: center; gap: 16px; }
+
+  .shield-icon {
+    width: 42px; height: 42px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    animation: shieldPulse 3s ease-in-out infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes shieldPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(0,212,255,0.4); }
+    50% { box-shadow: 0 0 20px 6px rgba(0,212,255,0.15); }
+  }
+
+  .header-title h1 {
+    font-family: 'Orbitron', monospace;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .header-title p {
+    font-size: 11px;
+    color: var(--textdim);
+    font-family: 'Share Tech Mono', monospace;
+    letter-spacing: 1px;
+  }
+
+  .header-center {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+
+  .status-badge {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(0,255,136,0.08);
+    border: 1px solid rgba(0,255,136,0.3);
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--green);
+  }
+
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: blink 1.5s ease-in-out infinite;
+  }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  .header-time {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--textdim);
+    letter-spacing: 1px;
+  }
+
+  .header-right { display: flex; gap: 8px; align-items: center; }
+
+  .btn {
+    padding: 7px 16px;
+    border-radius: 4px;
+    border: 1px solid;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: currentColor;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .btn:hover::before { opacity: 0.1; }
+
+  .btn-primary {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: rgba(0,212,255,0.05);
+  }
+
+  .btn-danger {
+    color: var(--danger);
+    border-color: var(--danger);
+    background: rgba(255,51,102,0.05);
+  }
+
+  .btn-danger:hover {
+    background: rgba(255,51,102,0.15);
+    box-shadow: 0 0 20px rgba(255,51,102,0.3);
+  }
+
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── CONFIG PANEL ── */
+  .config-panel {
+    position: relative; z-index: 10;
+    background: rgba(13,31,45,0.9);
+    border-bottom: 1px solid var(--border);
+    padding: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s ease, padding 0.4s ease;
+  }
+
+  .config-panel.open {
+    max-height: 400px;
+    padding: 20px 24px;
+  }
+
+  .config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+
+  .config-field label {
+    display: block;
+    font-size: 10px;
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--textdim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 5px;
+  }
+
+  .config-field input, .config-field select {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--muted);
+    color: var(--text);
+    padding: 8px 10px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .config-field input:focus, .config-field select:focus {
+    border-color: var(--accent);
+  }
+
+  .config-field input[type="password"] { letter-spacing: 2px; }
+
+  .config-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+  .config-hint {
+    font-size: 11px;
+    color: var(--textdim);
+    font-family: 'Share Tech Mono', monospace;
+    flex: 1;
+    min-width: 200px;
+  }
+
+  /* ── ATTACK BANNER ── */
+  .attack-banner {
+    display: none;
+    position: relative; z-index: 20;
+    background: linear-gradient(90deg, rgba(255,51,102,0.15), rgba(255,51,102,0.05), rgba(255,51,102,0.15));
+    border-top: 2px solid var(--danger);
+    border-bottom: 2px solid var(--danger);
+    padding: 12px 24px;
+    animation: dangerPulse 1s ease-in-out infinite;
+  }
+
+  .attack-banner.active { display: flex; align-items: center; gap: 16px; }
+
+  @keyframes dangerPulse {
+    0%,100% { background: linear-gradient(90deg, rgba(255,51,102,0.15), rgba(255,51,102,0.05), rgba(255,51,102,0.15)); }
+    50% { background: linear-gradient(90deg, rgba(255,51,102,0.25), rgba(255,51,102,0.1), rgba(255,51,102,0.25)); }
+  }
+
+  .attack-icon { font-size: 24px; animation: spin 2s linear infinite; }
+  @keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+
+  .attack-text h3 {
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    color: var(--danger);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+
+  .attack-text p {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    color: rgba(255,100,130,0.9);
+    margin-top: 2px;
+  }
+
+  /* ── MAIN LAYOUT ── */
+  .main { position: relative; z-index: 1; padding: 20px 24px; }
+
+  /* ── KPI GRID ── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .kpi-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--kpi-color, var(--accent));
+  }
+
+  .kpi-card.danger { --kpi-color: var(--danger); border-color: rgba(255,51,102,0.4); }
+  .kpi-card.warn   { --kpi-color: var(--warn); }
+  .kpi-card.good   { --kpi-color: var(--green); }
+  .kpi-card.info   { --kpi-color: var(--cyan); }
+
+  .kpi-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 10px;
+  }
+
+  .kpi-label {
+    font-size: 10px;
+    color: var(--textdim);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-family: 'Share Tech Mono', monospace;
+    line-height: 1.4;
+    max-width: 120px;
+  }
+
+  .kpi-icon { font-size: 20px; opacity: 0.7; }
+
+  .kpi-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--kpi-color, var(--accent));
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+
+  .kpi-sub {
+    font-size: 11px;
+    color: var(--textdim);
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  .kpi-loading { animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* ── CONTENT GRID ── */
+  .content-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  @media (max-width: 900px) { .content-grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,0,0,0.2);
+  }
+
+  .panel-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  .panel-badge {
+    background: rgba(0,212,255,0.15);
+    border: 1px solid rgba(0,212,255,0.3);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  .panel-body { padding: 14px 16px; }
+
+  /* ── ALARMS LIST ── */
+  .alarm-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(14,58,82,0.5);
+  }
+
+  .alarm-item:last-child { border-bottom: none; }
+
+  .alarm-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+
+  .alarm-dot.OK         { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .alarm-dot.ALARM      { background: var(--danger); box-shadow: 0 0 6px var(--danger); animation: blink 0.8s infinite; }
+  .alarm-dot.INSUFFICIENT_DATA { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+
+  .alarm-info { flex: 1; min-width: 0; }
+
+  .alarm-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .alarm-desc {
+    font-size: 11px;
+    color: var(--textdim);
+    font-family: 'Share Tech Mono', monospace;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .alarm-state {
+    font-size: 10px;
+    font-family: 'Share Tech Mono', monospace;
+    padding: 3px 8px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  .alarm-state.OK               { color: var(--green); background: rgba(0,255,136,0.1); border: 1px solid rgba(0,255,136,0.3); }
+  .alarm-state.ALARM            { color: var(--danger); background: rgba(255,51,102,0.1); border: 1px solid rgba(255,51,102,0.3); }
+  .alarm-state.INSUFFICIENT_DATA { color: var(--warn); background: rgba(255,170,0,0.1); border: 1px solid rgba(255,170,0,0.3); }
+
+  /* ── LOGS ── */
+  .logs-container {
+    height: 300px;
+    overflow-y: auto;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    background: var(--bg);
+    border-radius: 4px;
+    padding: 10px;
+  }
+
+  .logs-container::-webkit-scrollbar { width: 4px; }
+  .logs-container::-webkit-scrollbar-track { background: var(--bg2); }
+  .logs-container::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
+
+  .log-entry {
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(14,58,82,0.3);
+    display: flex;
+    gap: 10px;
+    animation: logFadeIn 0.3s ease;
+    align-items: flex-start;
+  }
+
+  @keyframes logFadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
+
+  .log-ts { color: var(--textdim); white-space: nowrap; flex-shrink: 0; }
+  .log-msg { word-break: break-all; flex: 1; }
+
+  .log-entry.error   .log-msg { color: var(--danger); }
+  .log-entry.warn    .log-msg { color: var(--warn); }
+  .log-entry.success .log-msg { color: var(--green); }
+  .log-entry.info    .log-msg { color: var(--text); }
+
+  .log-entry.attack {
+    background: rgba(255,51,102,0.08);
+    border-radius: 3px;
+    padding: 4px 6px;
+    margin: 2px 0;
+  }
+
+  /* ── CHART ── */
+  .chart-wrap {
+    height: 200px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #activityChart {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* ── METRIC BARS ── */
+  .metric-bar-wrap { margin-bottom: 14px; }
+  .metric-bar-label {
+    display: flex; justify-content: space-between;
+    font-size: 11px;
+    margin-bottom: 5px;
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  .metric-bar-label span:first-child { color: var(--textdim); }
+  .metric-bar-label span:last-child { color: var(--accent); font-weight: bold; }
+
+  .metric-bar-track {
+    height: 6px;
+    background: var(--bg3);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .metric-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.8s ease;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+  }
+
+  .metric-bar-fill.warn-bar { background: linear-gradient(90deg, var(--warn), var(--danger)); }
+
+  /* ── FULL WIDTH LOG PANEL ── */
+  .full-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+
+  .full-logs {
+    height: 380px;
+    overflow-y: auto;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11.5px;
+    background: var(--bg);
+    padding: 12px;
+  }
+
+  .full-logs::-webkit-scrollbar { width: 4px; }
+  .full-logs::-webkit-scrollbar-track { background: var(--bg2); }
+  .full-logs::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
+
+  /* ── FOOTER ── */
+  .footer {
+    padding: 12px 24px;
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--textdim);
+    position: relative; z-index: 1;
+  }
+
+  /* ── NOTIFICATION ── */
+  .notif {
+    position: fixed;
+    top: 80px; right: 20px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 18px;
+    max-width: 320px;
+    z-index: 9998;
+    transform: translateX(400px);
+    transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
+    border-left: 3px solid var(--accent);
+  }
+
+  .notif.show { transform: translateX(0); }
+  .notif.danger-notif { border-left-color: var(--danger); }
+  .notif.success-notif { border-left-color: var(--green); }
+
+  .notif-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 5px;
+  }
+
+  .notif-title.danger-notif { color: var(--danger); }
+  .notif-title.success-notif { color: var(--green); }
+  .notif-title.info-notif { color: var(--cyan); }
+
+  .notif-msg { font-size: 12px; color: var(--text); font-family: 'Share Tech Mono', monospace; }
+
+  .empty-state {
+    text-align: center;
+    padding: 30px;
+    color: var(--textdim);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid var(--muted);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+  }
+
+  .section-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    color: var(--textdim);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+</style>
 </head>
 <body>
 
-<!-- ══ SIDEBAR ══ -->
-<nav class="sidebar">
-  <div class="sidebar-logo">
-    <div class="logo-icon">🛡️</div>
-    <div>
-      <div class="logo-text">SOC Dashboard</div>
-      <div class="logo-sub">PFA DevSecOps</div>
+<!-- HEADER -->
+<header class="header">
+  <div class="header-left">
+    <div class="shield-icon">🛡️</div>
+    <div class="header-title">
+      <h1>Security Operations Center</h1>
+      <p id="clusterInfo">AWS · us-east-1 · Configurer ci-dessous ↓</p>
     </div>
   </div>
-
-  <div class="nav-section">Navigation</div>
-  <button class="nav-item active" onclick="scrollTo('top-section')">📊 Vue générale</button>
-  <button class="nav-item" onclick="scrollTo('logs-section')">📋 Logs ECS</button>
-  <button class="nav-item" onclick="scrollTo('alarms-section')">🔔 Alarmes</button>
-  <button class="nav-item" onclick="scrollTo('resources-section')">🖥️ Ressources ECS</button>
-
-  <div class="nav-section">Ouvrir dans AWS</div>
-  <a class="aws-nav-btn" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=SOC-Security-Dashboard" target="_blank" rel="noopener">📈 Dashboard CloudWatch ↗</a>
-  <a class="aws-nav-btn" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fecs$252Fdevsecops" target="_blank" rel="noopener">📋 Logs /ecs/devsecops ↗</a>
-  <a class="aws-nav-btn" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#alarmsV2:" target="_blank" rel="noopener">🔔 Alarmes CloudWatch ↗</a>
-  <a class="aws-nav-btn" href="https://us-east-1.console.aws.amazon.com/ecs/v2/clusters/devsecops-cluster/services" target="_blank" rel="noopener">🖥️ ECS Services ↗</a>
-  <a class="aws-nav-btn" href="https://us-east-1.console.aws.amazon.com/sns/v3/home?region=us-east-1#/topics" target="_blank" rel="noopener">📧 SNS Topics ↗</a>
-
-  <div class="sidebar-bottom">
+  <div class="header-center">
     <div class="status-badge">
-      <div class="dot-pulse"></div>
-      <div>
-        <div style="font-weight:600;">Système actif</div>
-        <div style="font-size:10px;color:#166534;margin-top:1px;">{{ username }}</div>
-      </div>
+      <span class="status-dot"></span>
+      <span id="systemStatus">SYSTÈME ACTIF</span>
     </div>
-    <a href="{{ url_for('dashboard') }}" class="return-link">← Retour Dashboard</a>
+    <div class="header-time" id="headerTime">--</div>
   </div>
-</nav>
+  <div class="header-right">
+    <button class="btn btn-primary" onclick="toggleConfig()" id="cfgBtn">⚙️ CONFIG AWS</button>
+    <button class="btn btn-primary" onclick="refreshAll()" id="refreshBtn">🔄 REFRESH</button>
+    <button class="btn btn-danger" onclick="sendTestAlert()" id="testBtn">🚨 TEST ALERTE</button>
+  </div>
+</header>
 
-<!-- ══ MAIN ══ -->
+<!-- CONFIG PANEL -->
+<div class="config-panel" id="configPanel">
+  <div style="margin-bottom:14px; font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--warn);">
+    ⚠️ Les credentials AWS sont utilisés directement depuis votre navigateur via l'API CloudWatch. Ne partagez jamais cette page.
+  </div>
+  <div class="config-grid">
+    <div class="config-field">
+      <label>AWS Access Key ID</label>
+      <input type="password" id="cfgKeyId" placeholder="AKIAIOSFODNN7EXAMPLE" autocomplete="off">
+    </div>
+    <div class="config-field">
+      <label>AWS Secret Access Key</label>
+      <input type="password" id="cfgSecret" placeholder="wJalrXUtnFEMI/K7MDENG/..." autocomplete="off">
+    </div>
+    <div class="config-field">
+      <label>AWS Region</label>
+      <input type="text" id="cfgRegion" placeholder="us-east-1" value="us-east-1">
+    </div>
+    <div class="config-field">
+      <label>Log Group Name</label>
+      <input type="text" id="cfgLogGroup" placeholder="/ecs/devsecops" value="/ecs/devsecops">
+    </div>
+    <div class="config-field">
+      <label>ECS Cluster Name</label>
+      <input type="text" id="cfgCluster" placeholder="devsecops-cluster" value="devsecops-cluster">
+    </div>
+    <div class="config-field">
+      <label>ECS Service Name</label>
+      <input type="text" id="cfgService" placeholder="devsecops-service" value="devsecops-service">
+    </div>
+    <div class="config-field">
+      <label>Email alerte (SNS / alertes)</label>
+      <input type="text" id="cfgEmail" placeholder="votre@email.com">
+    </div>
+    <div class="config-field">
+      <label>AWS SNS Topic ARN (pour alertes)</label>
+      <input type="text" id="cfgSNS" placeholder="arn:aws:sns:us-east-1:123:SOC-Alerts">
+    </div>
+  </div>
+  <div class="config-actions">
+    <button class="btn btn-primary" onclick="saveConfig()">💾 SAUVEGARDER & CONNECTER</button>
+    <button class="btn" onclick="clearConfig()" style="color:var(--danger);border-color:var(--danger);">🗑️ EFFACER</button>
+    <span class="config-hint" id="configStatus">Entrez vos credentials AWS pour commencer.</span>
+  </div>
+</div>
+
+<!-- ATTACK BANNER -->
+<div class="attack-banner" id="attackBanner">
+  <div class="attack-icon">⚠️</div>
+  <div class="attack-text">
+    <h3>🚨 ATTAQUE DÉTECTÉE</h3>
+    <p id="attackDetail">Activité suspecte détectée sur votre infrastructure</p>
+  </div>
+</div>
+
+<!-- MAIN -->
 <main class="main">
 
-  <!-- Topbar -->
-  <div class="topbar" id="top-section">
-    <div>
-      <div class="topbar-title">Security Operations Center</div>
-      <div class="topbar-sub">
-        AWS Academy · us-east-1 · devsecops-cluster &nbsp;·&nbsp;
-        <span id="data-source-badge" class="source-badge source-mock">⏳ Connexion…</span>
+  <!-- KPI GRID -->
+  <div class="kpi-grid">
+    <div class="kpi-card danger" id="kpiErrors">
+      <div class="kpi-header">
+        <div class="kpi-label">Erreurs ECS<br>(1h)</div>
+        <div class="kpi-icon">⚠️</div>
       </div>
+      <div class="kpi-value kpi-loading" id="kpiErrorsVal">—</div>
+      <div class="kpi-sub" id="kpiErrorsSub">En attente de données</div>
     </div>
-    <div class="topbar-actions">
-      <span class="last-update" id="last-update">Mise à jour: —</span>
-      <button class="btn" onclick="refreshAll()">🔄 Rafraîchir</button>
-      <button class="btn btn-primary" id="test-btn" onclick="sendTestAlert()">🚨 Test alerte</button>
+
+    <div class="kpi-card warn" id="kpiUnauth">
+      <div class="kpi-header">
+        <div class="kpi-label">Accès refusés<br>(401/403)</div>
+        <div class="kpi-icon">🔒</div>
+      </div>
+      <div class="kpi-value kpi-loading" id="kpiUnauthVal">—</div>
+      <div class="kpi-sub" id="kpiUnauthSub">En attente de données</div>
+    </div>
+
+    <div class="kpi-card info" id="kpiCPU">
+      <div class="kpi-header">
+        <div class="kpi-label">CPU ECS<br>Utilisation</div>
+        <div class="kpi-icon">⚡</div>
+      </div>
+      <div class="kpi-value kpi-loading" id="kpiCPUVal">—</div>
+      <div class="kpi-sub" id="kpiCPUSub">En attente de données</div>
+    </div>
+
+    <div class="kpi-card info" id="kpiMem">
+      <div class="kpi-header">
+        <div class="kpi-label">Mémoire ECS<br>Utilisation</div>
+        <div class="kpi-icon">💾</div>
+      </div>
+      <div class="kpi-value kpi-loading" id="kpiMemVal">—</div>
+      <div class="kpi-sub" id="kpiMemSub">En attente de données</div>
+    </div>
+
+    <div class="kpi-card good" id="kpiRequests">
+      <div class="kpi-header">
+        <div class="kpi-label">Requêtes<br>(5min)</div>
+        <div class="kpi-icon">📈</div>
+      </div>
+      <div class="kpi-value kpi-loading" id="kpiRequestsVal">—</div>
+      <div class="kpi-sub" id="kpiRequestsSub">En attente de données</div>
+    </div>
+
+    <div class="kpi-card danger" id="kpiAlarms">
+      <div class="kpi-header">
+        <div class="kpi-label">Alarmes<br>ACTIVES</div>
+        <div class="kpi-icon">🔔</div>
+      </div>
+      <div class="kpi-value kpi-loading" id="kpiAlarmsVal">—</div>
+      <div class="kpi-sub" id="kpiAlarmsSub">En attente de données</div>
     </div>
   </div>
 
-  <!-- Métriques -->
-  <div class="grid4">
-    <div class="metric-card red">
-      <div class="metric-icon red">⚠️</div>
-      <div class="metric-label">Erreurs ECS (3h)</div>
-      <div class="metric-value red" id="m-errors">—</div>
-      <div class="metric-trend" id="t-errors">Chargement…</div>
-    </div>
-    <div class="metric-card amber">
-      <div class="metric-icon amber">🔒</div>
-      <div class="metric-label">Accès refusés (3h)</div>
-      <div class="metric-value amber" id="m-unauth">—</div>
-      <div class="metric-trend" id="t-unauth">Chargement…</div>
-    </div>
-    <div class="metric-card blue">
-      <div class="metric-icon blue">⚡</div>
-      <div class="metric-label">CPU ECS</div>
-      <div class="metric-value blue" id="m-cpu">—</div>
-      <div class="metric-trend">Service: devsecops-service</div>
-    </div>
-    <div class="metric-card green">
-      <div class="metric-icon green">💾</div>
-      <div class="metric-label">Mémoire ECS</div>
-      <div class="metric-value green" id="m-mem">—</div>
-      <div class="metric-trend">Cluster: devsecops-cluster</div>
-    </div>
-  </div>
+  <!-- CHARTS + ALARMS -->
+  <div class="content-grid">
 
-  <!-- Chart + Alarmes -->
-  <div class="grid2">
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">📈 Activité sécurité (temps réel)</div>
-        <span style="font-size:11px;color:#475569;">Refresh 30s</span>
+    <!-- ALARMS -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">🔔 Alarmes CloudWatch</div>
+        <div class="panel-badge" id="alarmsTs">--</div>
       </div>
-      <canvas id="chart" height="160"></canvas>
+      <div class="panel-body">
+        <div id="alarmsList"><div class="empty-state"><span class="spinner"></span>Chargement des alarmes...</div></div>
+      </div>
     </div>
 
-    <div class="card" id="alarms-section">
-      <div class="card-header">
-        <div class="card-title">🔔 Alarmes CloudWatch</div>
-        <div class="card-actions">
-          <button class="btn" onclick="fetchAlarms()" title="Recharger les alarmes">↻</button>
-          <a class="btn btn-aws" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#alarmsV2:" target="_blank" rel="noopener">Voir dans AWS ↗</a>
+    <!-- METRICS -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">📊 Métriques ECS</div>
+        <div class="panel-badge" id="metricsTs">--</div>
+      </div>
+      <div class="panel-body">
+        <div class="section-title">Ressources</div>
+        <div id="metricBars">
+          <div class="empty-state"><span class="spinner"></span>Chargement des métriques...</div>
+        </div>
+        <div class="section-title" style="margin-top:16px">Activité (30 min)</div>
+        <div class="chart-wrap">
+          <canvas id="activityChart"></canvas>
         </div>
       </div>
-      <div id="alarms-container">
-        <div class="log-loading"><div class="spinner"></div><span>Chargement des alarmes…</span></div>
-      </div>
     </div>
+
   </div>
 
-  <!-- Logs -->
-  <div class="card" id="logs-section">
-    <div class="card-header">
-      <div class="card-title">
-        📋 Logs CloudWatch — <code style="font-size:11px;color:#475569;">/ecs/devsecops</code>
-        <span id="logs-source-badge" class="source-badge source-mock" style="margin-left:4px;">⏳</span>
-      </div>
-      <div class="card-actions">
-        <button class="filter-btn" onclick="clearLogs()">🗑️ Vider</button>
-        <button class="filter-btn" onclick="fetchLogs()">↻ Recharger</button>
-        <a class="btn btn-aws" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fecs$252Fdevsecops" target="_blank" rel="noopener">Ouvrir dans CloudWatch ↗</a>
+  <!-- FULL LOGS -->
+  <div class="full-panel">
+    <div class="panel-header">
+      <div class="panel-title">📋 Logs ECS en temps réel — <span id="logGroupLabel">/ecs/devsecops</span></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="panel-badge" id="logsTs">--</div>
+        <button class="btn btn-primary" style="padding:4px 10px;font-size:10px" onclick="clearLogs()">🗑️ VIDER</button>
+        <button class="btn btn-primary" style="padding:4px 10px;font-size:10px" onclick="fetchLogs()">↺ RELOAD</button>
       </div>
     </div>
-    <div class="log-filters">
-      <button class="filter-btn active-ALL" id="f-ALL"   onclick="setFilter('ALL')">Tous</button>
-      <button class="filter-btn"            id="f-INFO"  onclick="setFilter('INFO')">INFO</button>
-      <button class="filter-btn"            id="f-WARN"  onclick="setFilter('WARN')">WARN</button>
-      <button class="filter-btn"            id="f-ERROR" onclick="setFilter('ERROR')">ERROR</button>
-      <span style="margin-left:auto;font-size:11px;color:#475569;" id="log-count"></span>
-    </div>
-    <div class="log-container" id="log-container">
-      <div class="log-loading"><div class="spinner"></div><span>Connexion à CloudWatch…</span></div>
-    </div>
-  </div>
-
-  <!-- Ressources + SNS -->
-  <div class="grid2" id="resources-section">
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">🖥️ Ressources ECS</div>
-        <a class="btn btn-aws" href="https://us-east-1.console.aws.amazon.com/ecs/v2/clusters/devsecops-cluster/services" target="_blank" rel="noopener">ECS ↗</a>
-      </div>
-      <div class="bar-row"><span class="bar-label">CPU</span><div class="bar-track"><div class="bar-fill" id="bar-cpu" style="width:0%;background:#3b82f6;"></div></div><span class="bar-value" id="bv-cpu">—</span></div>
-      <div class="bar-row"><span class="bar-label">Mémoire</span><div class="bar-track"><div class="bar-fill" id="bar-mem" style="width:0%;background:#8b5cf6;"></div></div><span class="bar-value" id="bv-mem">—</span></div>
-      <div class="bar-row"><span class="bar-label">Erreurs (3h)</span><div class="bar-track"><div class="bar-fill" id="bar-err" style="width:0%;background:#ef4444;"></div></div><span class="bar-value" id="bv-err">—</span></div>
-      <div class="bar-row"><span class="bar-label">Accès refusés</span><div class="bar-track"><div class="bar-fill" id="bar-unauth" style="width:0%;background:#f59e0b;"></div></div><span class="bar-value" id="bv-unauth">—</span></div>
-    </div>
-
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">📧 Notifications SNS</div>
-        <a class="btn btn-aws" href="https://us-east-1.console.aws.amazon.com/sns/v3/home?region=us-east-1#/topics" target="_blank" rel="noopener">SNS ↗</a>
-      </div>
-      <div style="font-size:11px;color:#475569;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Topic: soc-alerts</div>
-      <div class="email-row">✉️ <span>wassimhouiechri902@gmail.com</span><span style="margin-left:auto;font-size:11px;color:#4ade80;">✓ Confirmé</span></div>
-      <div class="email-row">✉️ <span>omarmekki966@gmail.com</span><span style="margin-left:auto;font-size:11px;color:#4ade80;">✓ Confirmé</span></div>
-      <div style="margin-top:14px;">
-        <button class="btn btn-primary" style="width:100%;justify-content:center;" id="test-btn-2" onclick="sendTestAlert()">
-          🚨 Envoyer alerte de test SNS
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Accès directs AWS — vrais boutons -->
-  <div class="card">
-    <div class="card-header">
-      <div class="card-title">🔗 Accès directs AWS Console</div>
-    </div>
-    <div class="aws-buttons-grid">
-      <a class="aws-btn" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=SOC-Security-Dashboard" target="_blank" rel="noopener">📊 Dashboard CloudWatch ↗</a>
-      <a class="aws-btn" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fecs$252Fdevsecops" target="_blank" rel="noopener">📋 Logs /ecs/devsecops ↗</a>
-      <a class="aws-btn" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#alarmsV2:" target="_blank" rel="noopener">🔔 Alarmes CloudWatch ↗</a>
-      <a class="aws-btn" href="https://us-east-1.console.aws.amazon.com/ecs/v2/clusters/devsecops-cluster/services" target="_blank" rel="noopener">🖥️ ECS Services ↗</a>
-      <a class="aws-btn" href="https://us-east-1.console.aws.amazon.com/sns/v3/home?region=us-east-1#/topics" target="_blank" rel="noopener">📧 SNS Topics ↗</a>
-      <a class="aws-btn" href="https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-1#/roles" target="_blank" rel="noopener">🔑 IAM Roles ↗</a>
+    <div class="full-logs" id="fullLogs">
+      <div class="empty-state">Configurez vos credentials AWS puis cliquez sur REFRESH pour charger les logs réels.</div>
     </div>
   </div>
 
 </main>
 
-<div id="toast"></div>
+<!-- FOOTER -->
+<footer class="footer">
+  <span>SOC Dashboard v2.0 · DevSecOps · AWS Academy</span>
+  <span id="footerRefresh">Dernière mise à jour: —</span>
+  <span id="footerRegion">Région: —</span>
+</footer>
+
+<!-- NOTIFICATION -->
+<div class="notif" id="notif">
+  <div class="notif-title" id="notifTitle">Notification</div>
+  <div class="notif-msg" id="notifMsg"></div>
+</div>
 
 <script>
-// ══ CHART ══
-const chartLabels = [], chartErrors = [], chartWarns = [];
-let canvasEl, chartCtx;
+// ═══════════════════════════════════════════════════════════
+// AWS SIGNATURE V4 — Pure browser implementation
+// ═══════════════════════════════════════════════════════════
 
-function drawChart() {
-  if (!chartCtx) return;
-  const w = canvasEl.width, h = canvasEl.height;
-  chartCtx.clearRect(0, 0, w, h);
-  const pad = {t:20,r:20,b:30,l:35};
-  const cw = w-pad.l-pad.r, ch = h-pad.t-pad.b;
-  const n = chartLabels.length;
-  if (n < 2) {
-    chartCtx.fillStyle='#475569'; chartCtx.font='12px sans-serif';
-    chartCtx.fillText('En attente de données…', w/2-70, h/2); return;
-  }
-  chartCtx.strokeStyle='#1e2235'; chartCtx.lineWidth=1;
-  for (let i=0;i<=4;i++){const y=pad.t+(ch/4)*i;chartCtx.beginPath();chartCtx.moveTo(pad.l,y);chartCtx.lineTo(pad.l+cw,y);chartCtx.stroke();}
-  chartCtx.font='10px monospace'; chartCtx.fillStyle='#475569';
-  const step=Math.max(1,Math.floor(n/5));
-  for(let i=0;i<n;i+=step){const x=pad.l+(cw/(n-1))*i;chartCtx.fillText(chartLabels[i],x-12,h-8);}
-  chartCtx.strokeStyle='#ef4444';chartCtx.lineWidth=2;chartCtx.beginPath();
-  for(let i=0;i<n;i++){const x=pad.l+(cw/(n-1))*i,y=pad.t+ch-(Math.min(chartErrors[i],4)/4)*ch;i===0?chartCtx.moveTo(x,y):chartCtx.lineTo(x,y);}chartCtx.stroke();
-  chartCtx.strokeStyle='#f59e0b';chartCtx.lineWidth=2;chartCtx.beginPath();
-  for(let i=0;i<n;i++){const x=pad.l+(cw/(n-1))*i,y=pad.t+ch-(Math.min(chartWarns[i],4)/4)*ch;i===0?chartCtx.moveTo(x,y):chartCtx.lineTo(x,y);}chartCtx.stroke();
-  chartCtx.fillStyle='#ef4444';chartCtx.fillRect(w-130,8,12,3);chartCtx.fillStyle='#94a3b8';chartCtx.fillText('Erreurs',w-114,14);
-  chartCtx.fillStyle='#f59e0b';chartCtx.fillRect(w-66,8,12,3);chartCtx.fillStyle='#94a3b8';chartCtx.fillText('Warnings',w-50,14);
+async function hmac(key, data) {
+  const k = typeof key === 'string' ? new TextEncoder().encode(key) : key;
+  const cryptoKey = await crypto.subtle.importKey('raw', k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return crypto.subtle.sign('HMAC', cryptoKey, typeof data === 'string' ? new TextEncoder().encode(data) : data);
 }
 
-function pushChart(events) {
-  const t = nowStr().slice(0,5);
-  chartLabels.push(t); chartErrors.push(events.filter(e=>e.level==='ERROR').length); chartWarns.push(events.filter(e=>e.level==='WARN').length);
-  if(chartLabels.length>15){chartLabels.shift();chartErrors.shift();chartWarns.shift();}
-  drawChart();
+async function sha256(data) {
+  return crypto.subtle.digest('SHA-256', typeof data === 'string' ? new TextEncoder().encode(data) : data);
 }
 
-// ══ STATE ══
-let allLogs=[], currentFilter='ALL';
-
-function nowStr() {
-  const d=new Date();
-  return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')+':'+d.getSeconds().toString().padStart(2,'0');
+function hex(buf) {
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
 }
 
-function scrollTo(id) {
-  const el=document.getElementById(id);
-  if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+async function signRequest(method, host, path, body, service, region, keyId, secret) {
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]/g,'').replace(/\.\d{3}/,'');
+  const dateStamp = amzDate.slice(0, 8);
+
+  const payloadHash = hex(await sha256(body));
+  const headers = {
+    'content-type': 'application/x-amz-json-1.1',
+    'host': host,
+    'x-amz-date': amzDate,
+    'x-amz-target': ''  // set per-call
+  };
+
+  const canonicalHeaders = `content-type:${headers['content-type']}\nhost:${host}\nx-amz-date:${amzDate}\n`;
+  const signedHeaders = 'content-type;host;x-amz-date';
+  const canonicalRequest = `${method}\n${path}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
+
+  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n${hex(await sha256(canonicalRequest))}`;
+
+  const enc = s => new TextEncoder().encode(s);
+  const kDate    = await hmac(enc(`AWS4${secret}`), dateStamp);
+  const kRegion  = await hmac(kDate, region);
+  const kService = await hmac(kRegion, service);
+  const kSigning = await hmac(kService, 'aws4_request');
+  const signature = hex(await hmac(kSigning, stringToSign));
+
+  const authHeader = `AWS4-HMAC-SHA256 Credential=${keyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  return { amzDate, authHeader, payloadHash };
 }
 
-// ══ TOAST ══
-let toastTimer;
-function showToast(msg, type='info') {
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.className='show '+type;
-  clearTimeout(toastTimer);
-  toastTimer=setTimeout(()=>{t.className='';},4500);
-}
+async function awsRequest(service, target, payload, region, keyId, secret) {
+  const host = `${service}.${region}.amazonaws.com`;
+  const body = JSON.stringify(payload);
 
-// ══ BADGES ══
-function setSourceBadge(ok, msg) {
-  const b=document.getElementById('data-source-badge'), lb=document.getElementById('logs-source-badge');
-  if(ok){b.className='source-badge source-live';b.textContent='🟢 Live CloudWatch';lb.className='source-badge source-live';lb.textContent='🟢 Live';}
-  else{b.className='source-badge source-error';b.textContent='🔴 '+(msg||'Erreur');lb.className='source-badge source-error';lb.textContent='🔴 Erreur';}
-}
+  const { amzDate, authHeader } = await signRequest('POST', host, '/', body, service, region, keyId, secret);
 
-// ══ safeJson ══
-async function safeJson(url, options) {
-  const res=await fetch(url,options);
-  const ct=res.headers.get('content-type')||'';
-  if(!ct.includes('application/json')){
-    if(res.status===401||res.redirected||res.url.includes('/login'))showSessionExpired();
-    return null;
-  }
-  return res.json();
-}
-
-function showSessionExpired() {
-  document.querySelectorAll('.log-container,#alarms-container').forEach(el=>{
-    el.innerHTML=`<div class="session-expired">⏰ Session expirée — <a href="/login" style="color:#fbbf24;">Reconnectez-vous</a></div>`;
+  const response = await fetch(`https://${host}/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-amz-json-1.1',
+      'X-Amz-Date': amzDate,
+      'X-Amz-Target': target,
+      'Authorization': authHeader
+    },
+    body
   });
-  setSourceBadge(false,'Session expirée');
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`AWS ${response.status}: ${err}`);
+  }
+
+  return response.json();
 }
 
-// ══ RENDER LOGS ══
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+
+let cfg = {
+  keyId: '', secret: '', region: 'us-east-1',
+  logGroup: '/ecs/devsecops', cluster: 'devsecops-cluster',
+  service: 'devsecops-service', email: '', sns: ''
+};
+
+let attackCount = 0;
+let chartData = [];
+let chartLabels = [];
+let refreshInterval = null;
+let logEntries = [];
+
+// ═══════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════
+
+function toggleConfig() {
+  const p = document.getElementById('configPanel');
+  p.classList.toggle('open');
+}
+
+function saveConfig() {
+  cfg.keyId    = document.getElementById('cfgKeyId').value.trim();
+  cfg.secret   = document.getElementById('cfgSecret').value.trim();
+  cfg.region   = document.getElementById('cfgRegion').value.trim() || 'us-east-1';
+  cfg.logGroup = document.getElementById('cfgLogGroup').value.trim() || '/ecs/devsecops';
+  cfg.cluster  = document.getElementById('cfgCluster').value.trim() || 'devsecops-cluster';
+  cfg.service  = document.getElementById('cfgService').value.trim() || 'devsecops-service';
+  cfg.email    = document.getElementById('cfgEmail').value.trim();
+  cfg.sns      = document.getElementById('cfgSNS').value.trim();
+
+  if (!cfg.keyId || !cfg.secret) {
+    document.getElementById('configStatus').textContent = '⚠️ Entrez votre Access Key ID et Secret Key.';
+    document.getElementById('configStatus').style.color = 'var(--danger)';
+    return;
+  }
+
+  document.getElementById('clusterInfo').textContent = `AWS · ${cfg.region} · ${cfg.cluster}`;
+  document.getElementById('logGroupLabel').textContent = cfg.logGroup;
+  document.getElementById('footerRegion').textContent = `Région: ${cfg.region}`;
+  document.getElementById('configStatus').textContent = '✅ Connecté — Chargement des données...';
+  document.getElementById('configStatus').style.color = 'var(--green)';
+
+  // Save to sessionStorage (not localStorage per security)
+  try {
+    sessionStorage.setItem('soc_cfg', JSON.stringify({
+      region: cfg.region, logGroup: cfg.logGroup,
+      cluster: cfg.cluster, service: cfg.service, email: cfg.email, sns: cfg.sns
+    }));
+  } catch(e) {}
+
+  document.getElementById('configPanel').classList.remove('open');
+  refreshAll();
+
+  // Auto-refresh every 30s
+  if (refreshInterval) clearInterval(refreshInterval);
+  refreshInterval = setInterval(refreshAll, 30000);
+}
+
+function clearConfig() {
+  cfg = { keyId:'', secret:'', region:'us-east-1', logGroup:'/ecs/devsecops', cluster:'devsecops-cluster', service:'devsecops-service', email:'', sns:'' };
+  ['cfgKeyId','cfgSecret'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('configStatus').textContent = 'Credentials effacés.';
+  document.getElementById('configStatus').style.color = 'var(--textdim)';
+  try { sessionStorage.removeItem('soc_cfg'); } catch(e) {}
+}
+
+function isConfigured() {
+  return cfg.keyId && cfg.secret;
+}
+
+// ═══════════════════════════════════════════════════════════
+// REFRESH ALL
+// ═══════════════════════════════════════════════════════════
+
+async function refreshAll() {
+  if (!isConfigured()) {
+    showNotif('info-notif', 'Configuration requise', 'Entrez vos credentials AWS dans la configuration.');
+    document.getElementById('configPanel').classList.add('open');
+    return;
+  }
+
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ CHARGEMENT...';
+
+  try {
+    await Promise.all([fetchAlarms(), fetchMetrics(), fetchLogs()]);
+    const ts = new Date().toLocaleTimeString('fr-FR');
+    document.getElementById('footerRefresh').textContent = `Dernière mise à jour: ${ts}`;
+  } catch(e) {
+    showNotif('danger-notif', 'Erreur AWS', e.message.slice(0, 100));
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🔄 REFRESH';
+}
+
+// ═══════════════════════════════════════════════════════════
+// CLOUDWATCH ALARMS
+// ═══════════════════════════════════════════════════════════
+
+async function fetchAlarms() {
+  const data = await awsRequest(
+    'monitoring',
+    'GraniteServiceVersion20100801.DescribeAlarms',
+    { MaxRecords: 50 },
+    cfg.region, cfg.keyId, cfg.secret
+  );
+
+  const alarms = data.MetricAlarms || [];
+  const activeAlarms = alarms.filter(a => a.StateValue === 'ALARM');
+
+  // Update KPI
+  document.getElementById('kpiAlarmsVal').textContent = activeAlarms.length;
+  document.getElementById('kpiAlarmsVal').classList.remove('kpi-loading');
+  document.getElementById('kpiAlarmsSub').textContent = `${alarms.length} alarmes configurées`;
+
+  const card = document.getElementById('kpiAlarms');
+  if (activeAlarms.length > 0) {
+    card.style.setProperty('--kpi-color', 'var(--danger)');
+    triggerAttackDetection(`${activeAlarms.length} alarme(s) CloudWatch en état ALARM !`);
+  }
+
+  // Render
+  const el = document.getElementById('alarmsList');
+  if (!alarms.length) {
+    el.innerHTML = '<div class="empty-state">Aucune alarme trouvée dans cette région.</div>';
+  } else {
+    el.innerHTML = alarms.map(a => `
+      <div class="alarm-item">
+        <div class="alarm-dot ${a.StateValue}"></div>
+        <div class="alarm-info">
+          <div class="alarm-name">${a.AlarmName}</div>
+          <div class="alarm-desc">${a.AlarmDescription || a.MetricName || '—'}</div>
+        </div>
+        <div class="alarm-state ${a.StateValue}">${a.StateValue}</div>
+      </div>
+    `).join('');
+  }
+
+  document.getElementById('alarmsTs').textContent = new Date().toLocaleTimeString('fr-FR');
+}
+
+// ═══════════════════════════════════════════════════════════
+// CLOUDWATCH METRICS (ECS CPU + MEM)
+// ═══════════════════════════════════════════════════════════
+
+async function fetchMetrics() {
+  const now = new Date();
+  const start = new Date(now - 30 * 60 * 1000);
+
+  const queries = [
+    {
+      Id: 'cpu',
+      MetricStat: {
+        Metric: {
+          Namespace: 'AWS/ECS',
+          MetricName: 'CPUUtilization',
+          Dimensions: [
+            { Name: 'ClusterName', Value: cfg.cluster },
+            { Name: 'ServiceName', Value: cfg.service }
+          ]
+        },
+        Period: 300,
+        Stat: 'Average'
+      }
+    },
+    {
+      Id: 'mem',
+      MetricStat: {
+        Metric: {
+          Namespace: 'AWS/ECS',
+          MetricName: 'MemoryUtilization',
+          Dimensions: [
+            { Name: 'ClusterName', Value: cfg.cluster },
+            { Name: 'ServiceName', Value: cfg.service }
+          ]
+        },
+        Period: 300,
+        Stat: 'Average'
+      }
+    }
+  ];
+
+  const data = await awsRequest(
+    'monitoring',
+    'GraniteServiceVersion20100801.GetMetricData',
+    {
+      MetricDataQueries: queries,
+      StartTime: start.toISOString(),
+      EndTime: now.toISOString(),
+    },
+    cfg.region, cfg.keyId, cfg.secret
+  );
+
+  const results = data.MetricDataResults || [];
+  const cpuResult = results.find(r => r.Id === 'cpu');
+  const memResult = results.find(r => r.Id === 'mem');
+
+  const cpuVals = cpuResult?.Values || [];
+  const memVals = memResult?.Values || [];
+
+  const cpuLast = cpuVals.length ? cpuVals[0].toFixed(1) : null;
+  const memLast = memVals.length ? memVals[0].toFixed(1) : null;
+
+  // Update KPI
+  if (cpuLast !== null) {
+    document.getElementById('kpiCPUVal').textContent = cpuLast + '%';
+    document.getElementById('kpiCPUSub').textContent = `Service: ${cfg.service}`;
+    document.getElementById('kpiCPUVal').classList.remove('kpi-loading');
+  }
+
+  if (memLast !== null) {
+    document.getElementById('kpiMemVal').textContent = memLast + '%';
+    document.getElementById('kpiMemSub').textContent = `Cluster: ${cfg.cluster}`;
+    document.getElementById('kpiMemVal').classList.remove('kpi-loading');
+    if (parseFloat(memLast) > 85) {
+      triggerAttackDetection(`Mémoire ECS critique: ${memLast}% !`);
+    }
+  }
+
+  // Render bars
+  const barsEl = document.getElementById('metricBars');
+  barsEl.innerHTML = `
+    ${renderBar('CPU ECS', cpuLast !== null ? cpuLast : '—', cpuLast, parseFloat(cpuLast) > 80)}
+    ${renderBar('Mémoire ECS', memLast !== null ? memLast : '—', memLast, parseFloat(memLast) > 80)}
+  `;
+
+  // Chart data
+  if (cpuVals.length) {
+    const ts = cpuResult.Timestamps || [];
+    chartLabels = ts.map(t => new Date(t).toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})).reverse();
+    chartData = [...cpuVals].reverse();
+    drawChart();
+  }
+
+  document.getElementById('metricsTs').textContent = new Date().toLocaleTimeString('fr-FR');
+}
+
+function renderBar(label, displayVal, pct, isWarn) {
+  const fillPct = isNaN(parseFloat(pct)) ? 0 : Math.min(100, parseFloat(pct));
+  return `
+    <div class="metric-bar-wrap">
+      <div class="metric-bar-label">
+        <span>${label}</span>
+        <span>${displayVal}${displayVal !== '—' ? '%' : ''}</span>
+      </div>
+      <div class="metric-bar-track">
+        <div class="metric-bar-fill ${isWarn ? 'warn-bar' : ''}" style="width:${fillPct}%"></div>
+      </div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════
+// CLOUDWATCH LOGS
+// ═══════════════════════════════════════════════════════════
+
+async function fetchLogs() {
+  const endTime = Date.now();
+  const startTime = endTime - 60 * 60 * 1000; // last 1h
+
+  // Get log streams first
+  let streams;
+  try {
+    const streamsData = await awsRequest(
+      'logs',
+      'Logs_20140328.DescribeLogStreams',
+      {
+        logGroupName: cfg.logGroup,
+        orderBy: 'LastEventTime',
+        descending: true,
+        limit: 5
+      },
+      cfg.region, cfg.keyId, cfg.secret
+    );
+    streams = (streamsData.logStreams || []).map(s => s.logStreamName);
+  } catch(e) {
+    appendSystemLog(`⚠️ Erreur log streams: ${e.message}`, 'warn');
+    return;
+  }
+
+  if (!streams.length) {
+    appendSystemLog('ℹ️ Aucun log stream trouvé dans ' + cfg.logGroup, 'info');
+    return;
+  }
+
+  // Filter logs
+  let filterData;
+  try {
+    filterData = await awsRequest(
+      'logs',
+      'Logs_20140328.FilterLogEvents',
+      {
+        logGroupName: cfg.logGroup,
+        startTime: startTime,
+        endTime: endTime,
+        limit: 100
+      },
+      cfg.region, cfg.keyId, cfg.secret
+    );
+  } catch(e) {
+    appendSystemLog(`⚠️ Erreur fetch logs: ${e.message}`, 'warn');
+    return;
+  }
+
+  const events = filterData.events || [];
+
+  // Parse & detect attacks
+  let errors = 0, unauth = 0, requests = 0;
+  const newEntries = [];
+
+  events.forEach(ev => {
+    const msg = ev.message || '';
+    const ts = new Date(ev.timestamp).toLocaleTimeString('fr-FR');
+
+    let cls = 'info';
+    let isAttack = false;
+
+    if (/\b(401|403|Unauthorized|Forbidden|Access Denied)\b/i.test(msg)) {
+      cls = 'warn'; unauth++;
+      if (unauth > 5) isAttack = true;
+    }
+
+    if (/\b(500|502|503|504|Error|Exception|CRITICAL|FATAL)\b/i.test(msg)) {
+      cls = 'error'; errors++;
+    }
+
+    if (/\b(200|201|204|GET|POST|PUT|DELETE)\b/.test(msg)) {
+      requests++;
+    }
+
+    if (/\b(sql injection|xss|attack|exploit|brute.?force|scanner|nmap|nikto|sqlmap)\b/i.test(msg)) {
+      cls = 'error'; isAttack = true;
+    }
+
+    if (isAttack) cls = 'attack';
+
+    newEntries.push({ ts, msg: msg.slice(0, 200), cls, isAttack });
+  });
+
+  // Detect attacks
+  if (unauth > 10) triggerAttackDetection(`${unauth} accès refusés détectés en 1h — possible attaque par force brute !`);
+  if (errors > 20) triggerAttackDetection(`${errors} erreurs ECS en 1h — service potentiellement compromis !`);
+
+  // Update KPIs
+  document.getElementById('kpiErrorsVal').textContent = errors;
+  document.getElementById('kpiErrorsSub').textContent = `Dernière heure`;
+  document.getElementById('kpiErrorsVal').classList.remove('kpi-loading');
+  if (errors > 0) document.getElementById('kpiErrors').classList.add('danger');
+
+  document.getElementById('kpiUnauthVal').textContent = unauth;
+  document.getElementById('kpiUnauthSub').textContent = `401 + 403 détectés`;
+  document.getElementById('kpiUnauthVal').classList.remove('kpi-loading');
+  if (unauth > 5) document.getElementById('kpiUnauth').classList.add('danger');
+
+  document.getElementById('kpiRequestsVal').textContent = requests;
+  document.getElementById('kpiRequestsSub').textContent = 'Requêtes totales';
+  document.getElementById('kpiRequestsVal').classList.remove('kpi-loading');
+
+  // Render logs
+  const logsEl = document.getElementById('fullLogs');
+  if (!newEntries.length) {
+    logsEl.innerHTML = '<div class="empty-state">Aucun log trouvé dans la fenêtre temporelle.</div>';
+  } else {
+    logEntries = newEntries;
+    renderLogs();
+  }
+
+  document.getElementById('logsTs').textContent = new Date().toLocaleTimeString('fr-FR');
+}
+
 function renderLogs() {
-  const container=document.getElementById('log-container');
-  const filtered=currentFilter==='ALL'?allLogs:allLogs.filter(e=>e.level===currentFilter);
-  document.getElementById('log-count').textContent=filtered.length+' événement'+(filtered.length!==1?'s':'');
-  if(filtered.length===0){container.innerHTML='<div style="color:#475569;padding:20px;text-align:center;font-size:13px;">Aucun log pour ce filtre</div>';return;}
-  const atBottom=container.scrollHeight-container.scrollTop-container.clientHeight<40;
-  container.innerHTML='';
-  filtered.forEach(e=>{
-    const row=document.createElement('div');row.className='log-row';
-    const safeMsg=e.msg.replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    row.innerHTML=`<span class="log-time">${e.time}</span><span class="log-level ${e.level}">${e.level}</span><span class="log-msg">${safeMsg}</span>`;
-    container.appendChild(row);
-  });
-  if(atBottom) container.scrollTop=container.scrollHeight;
+  const logsEl = document.getElementById('fullLogs');
+  logsEl.innerHTML = logEntries.map(e => `
+    <div class="log-entry ${e.cls}">
+      <span class="log-ts">[${e.ts}]</span>
+      <span class="log-msg">${escHtml(e.msg)}</span>
+    </div>
+  `).join('');
+  logsEl.scrollTop = logsEl.scrollHeight;
 }
 
-function setFilter(level) {
-  currentFilter=level;
-  ['ALL','INFO','WARN','ERROR'].forEach(k=>{document.getElementById('f-'+k).className='filter-btn';});
-  document.getElementById('f-'+level).className='filter-btn active-'+level;
-  renderLogs();
+function appendSystemLog(msg, cls='info') {
+  const logsEl = document.getElementById('fullLogs');
+  const ts = new Date().toLocaleTimeString('fr-FR');
+  const div = document.createElement('div');
+  div.className = `log-entry ${cls}`;
+  div.innerHTML = `<span class="log-ts">[${ts}]</span><span class="log-msg">${escHtml(msg)}</span>`;
+  logsEl.appendChild(div);
+  logsEl.scrollTop = logsEl.scrollHeight;
 }
 
 function clearLogs() {
-  allLogs=[];
-  document.getElementById('log-container').innerHTML='<div style="color:#475569;padding:20px;text-align:center;font-size:13px;">Logs vidés</div>';
-  document.getElementById('log-count').textContent='';
+  logEntries = [];
+  document.getElementById('fullLogs').innerHTML = '<div class="empty-state">Logs vidés. Cliquez RELOAD pour recharger.</div>';
 }
 
-// ══ FETCH LOGS ══
-async function fetchLogs() {
-  const container=document.getElementById('log-container');
-  try {
-    const data=await safeJson('/api/soc/logs');
-    if(!data) return;
-    if(!data.ok) {
-      setSourceBadge(false,data.error);
-      if(data.error&&data.error.includes('ResourceNotFoundException')) {
-        if(allLogs.length===0) container.innerHTML=`<div class="log-loading"><span style="font-size:24px;">📭</span><span>Le log group <code>/ecs/devsecops</code> n'a pas encore de streams.</span><span style="font-size:11px;color:#475569;">L'app doit avoir tourné au moins une fois.</span></div>`;
-      } else if(allLogs.length===0) {
-        container.innerHTML=`<div class="log-error">⚠️ CloudWatch : ${data.error}<br><span style="font-size:10px;opacity:.7;">Vérifiez que le IAM Role ECS a logs:FilterLogEvents</span></div>`;
-      }
-      return;
-    }
-    setSourceBadge(true);
-    if(data.events.length>0) {
-      const existingIds=new Set(allLogs.map(e=>e.id));
-      const newEvents=data.events.filter(e=>!existingIds.has(e.id));
-      if(newEvents.length>0) {
-        allLogs=[...allLogs,...newEvents];
-        if(allLogs.length>200) allLogs=allLogs.slice(-200);
-        renderLogs(); pushChart(newEvents);
-      }
-    } else if(allLogs.length===0) {
-      container.innerHTML=`<div class="log-loading"><span style="font-size:24px;">📭</span><span>Aucun log dans les 3 dernières heures.</span><span style="font-size:11px;color:#475569;">Le groupe existe, en attente d'activité ECS.</span></div>`;
-    }
-  } catch(err) {
-    setSourceBadge(false,'Réseau');
-    if(allLogs.length===0) container.innerHTML=`<div class="log-error">⚠️ Erreur réseau : ${err.message}</div>`;
-  }
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// ══ FETCH METRICS ══
-async function fetchMetrics() {
-  try {
-    const data=await safeJson('/api/soc/metrics');
-    if(!data||!data.ok) return;
-    document.getElementById('m-cpu').textContent=data.cpu+'%';
-    document.getElementById('m-mem').textContent=data.mem+'%';
-    document.getElementById('m-errors').textContent=data.errors;
-    document.getElementById('m-unauth').textContent=data.unauth;
-    document.getElementById('t-errors').textContent=data.errors>0?'⚠️ '+data.errors+' erreur(s)':'✅ Aucune erreur';
-    document.getElementById('t-unauth').textContent=data.unauth>0?'⚠️ '+data.unauth+' accès refusé(s)':'✅ Aucun accès refusé';
-    const setBar=(id,bvId,val,max,unit='')=>{
-      document.getElementById(id).style.width=Math.min(val,max)/max*100+'%';
-      document.getElementById(bvId).textContent=val+unit;
-    };
-    setBar('bar-cpu','bv-cpu',data.cpu,100,'%'); setBar('bar-mem','bv-mem',data.mem,100,'%');
-    setBar('bar-err','bv-err',data.errors,20); setBar('bar-unauth','bv-unauth',data.unauth,20);
-  } catch(err){console.warn('fetchMetrics:',err);}
+// ═══════════════════════════════════════════════════════════
+// ATTACK DETECTION
+// ═══════════════════════════════════════════════════════════
+
+function triggerAttackDetection(detail) {
+  attackCount++;
+  const banner = document.getElementById('attackBanner');
+  document.getElementById('attackDetail').textContent = detail;
+  banner.classList.add('active');
+
+  showNotif('danger-notif', '🚨 ATTAQUE DÉTECTÉE', detail);
+
+  // Auto-hide after 30s
+  setTimeout(() => { banner.classList.remove('active'); }, 30000);
 }
 
-// ══ FETCH ALARMS ══
-async function fetchAlarms() {
-  const container=document.getElementById('alarms-container');
-  try {
-    const data=await safeJson('/api/soc/alarms');
-    if(!data) return;
-    if(!data.ok){container.innerHTML=`<div class="log-error">⚠️ ${data.error}</div>`;return;}
-    if(!data.alarms.length){container.innerHTML='<div style="color:#475569;font-size:13px;padding:12px 0;">Aucune alarme configurée</div>';return;}
-    container.innerHTML='';
-    data.alarms.forEach(alarm=>{
-      const state=alarm.state.toLowerCase();
-      const css=state==='ok'?'ok':state==='alarm'?'alarm':'insufficient';
-      const label=state==='ok'?'OK':state==='alarm'?'ALARM':'INSUFF.';
-      const row=document.createElement('div'); row.className='alarm-row';
-      row.innerHTML=`<div class="alarm-left"><div class="alarm-dot ${css}"></div><div><div class="alarm-name">${alarm.name}</div><div class="alarm-desc" title="${alarm.desc||alarm.reason||''}">${alarm.desc||alarm.reason||''}</div></div></div><span class="alarm-badge ${css}">${label}</span>`;
-      container.appendChild(row);
-    });
-  } catch(err){container.innerHTML=`<div class="log-error">⚠️ Réseau : ${err.message}</div>`;}
-}
+// ═══════════════════════════════════════════════════════════
+// TEST ALERT — Publishes to SNS or shows UI alert
+// ═══════════════════════════════════════════════════════════
 
-// ══ TEST ALERT — fonctionnel ══
 async function sendTestAlert() {
-  const btn1=document.getElementById('test-btn');
-  const btn2=document.getElementById('test-btn-2');
-  [btn1,btn2].forEach(b=>{if(b){b.disabled=true;b.textContent='⏳ Envoi en cours…';}});
-  try {
-    const data=await safeJson('/api/soc/test-alert',{method:'POST'});
-    if(!data){
-      [btn1,btn2].forEach(b=>{if(b)b.textContent='❌ Session expirée';});
-      showToast('Session expirée, reconnectez-vous.','error');
-    } else if(data.ok){
-      [btn1,btn2].forEach(b=>{if(b)b.textContent='✅ Alerte envoyée !';});
-      showToast('✅ Alerte SNS envoyée avec succès aux abonnés !','success');
-    } else {
-      [btn1,btn2].forEach(b=>{if(b)b.textContent='❌ '+data.error;});
-      showToast('❌ '+data.error,'error');
-    }
-  } catch(e){
-    [btn1,btn2].forEach(b=>{if(b)b.textContent='❌ Erreur réseau';});
-    showToast('❌ Erreur réseau : '+e.message,'error');
+  if (!isConfigured()) {
+    showNotif('danger-notif', 'Non configuré', 'Configurez vos credentials AWS d\'abord.');
+    document.getElementById('configPanel').classList.add('open');
+    return;
   }
-  setTimeout(()=>{
-    if(btn1){btn1.textContent='🚨 Test alerte';btn1.disabled=false;}
-    if(btn2){btn2.textContent='🚨 Envoyer alerte de test SNS';btn2.disabled=false;}
-  },4000);
+
+  const btn = document.getElementById('testBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ ENVOI...';
+
+  const msg = `🚨 TEST ALERTE SOC — ${new Date().toISOString()} — Dashboard DevSecOps actif. Cluster: ${cfg.cluster}, Région: ${cfg.region}. Ceci est un test.`;
+
+  if (cfg.sns) {
+    // Real SNS publish
+    try {
+      await awsRequest(
+        'sns',
+        'AmazonSimpleNotificationService.Publish',
+        {
+          TopicArn: cfg.sns,
+          Message: msg,
+          Subject: '🚨 SOC Test Alert — DevSecOps Dashboard'
+        },
+        cfg.region, cfg.keyId, cfg.secret
+      );
+      showNotif('success-notif', '✅ Alerte envoyée', `Message publié sur SNS. Email envoyé si abonné.`);
+    } catch(e) {
+      showNotif('danger-notif', 'Erreur SNS', e.message.slice(0, 150));
+    }
+  } else {
+    // CloudWatch PutMetricAlarm test trigger via PutMetricData
+    try {
+      await awsRequest(
+        'monitoring',
+        'GraniteServiceVersion20100801.PutMetricData',
+        {
+          Namespace: 'SOC/TestAlerts',
+          MetricData: [{
+            MetricName: 'TestAlert',
+            Value: 1,
+            Unit: 'Count',
+            Timestamp: new Date().toISOString()
+          }]
+        },
+        cfg.region, cfg.keyId, cfg.secret
+      );
+      showNotif('success-notif', '✅ Métrique test envoyée', `Métrique publiée sur CloudWatch (SOC/TestAlerts). Configurez un SNS Topic ARN pour recevoir des emails.`);
+    } catch(e) {
+      showNotif('danger-notif', 'Erreur CloudWatch', e.message.slice(0, 150));
+    }
+  }
+
+  // Simulate attack banner for visual test
+  triggerAttackDetection('TEST — Alerte SOC simulée. Vérifiez votre email.');
+  appendSystemLog('🚨 TEST ALERTE envoyée depuis SOC Dashboard', 'error');
+
+  btn.disabled = false;
+  btn.textContent = '🚨 TEST ALERTE';
 }
 
-// ══ REFRESH ALL ══
-async function refreshAll() {
-  document.getElementById('last-update').textContent='Mise à jour: '+nowStr();
-  await Promise.all([fetchLogs(),fetchMetrics(),fetchAlarms()]);
-}
+// ═══════════════════════════════════════════════════════════
+// CHART (Canvas)
+// ═══════════════════════════════════════════════════════════
 
-// ══ INIT ══
-document.addEventListener('DOMContentLoaded',()=>{
-  canvasEl=document.getElementById('chart');
-  chartCtx=canvasEl.getContext('2d');
-  canvasEl.width=canvasEl.parentElement.clientWidth-40||500;
-  canvasEl.height=160;
-  drawChart();
-  refreshAll().then(()=>{
-    const c=document.getElementById('log-container');
-    c.scrollTop=c.scrollHeight;
+function drawChart() {
+  const canvas = document.getElementById('activityChart');
+  const ctx = canvas.getContext('2d');
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+
+  const w = canvas.width, h = canvas.height;
+  const padding = { top: 10, right: 10, bottom: 25, left: 35 };
+  const iw = w - padding.left - padding.right;
+  const ih = h - padding.top - padding.bottom;
+
+  ctx.clearRect(0, 0, w, h);
+
+  if (!chartData.length) return;
+
+  const maxVal = Math.max(...chartData, 1);
+  const minVal = 0;
+
+  // Grid
+  ctx.strokeStyle = 'rgba(14,58,82,0.5)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = padding.top + ih - (i / 4) * ih;
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(padding.left + iw, y);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(74,122,144,0.7)';
+    ctx.font = '9px Share Tech Mono';
+    ctx.textAlign = 'right';
+    ctx.fillText(((i / 4) * maxVal).toFixed(0) + '%', padding.left - 4, y + 3);
+  }
+
+  // Gradient fill
+  const grad = ctx.createLinearGradient(0, padding.top, 0, padding.top + ih);
+  grad.addColorStop(0, 'rgba(0,212,255,0.3)');
+  grad.addColorStop(1, 'rgba(0,212,255,0)');
+
+  ctx.beginPath();
+  chartData.forEach((v, i) => {
+    const x = padding.left + (i / (chartData.length - 1)) * iw;
+    const y = padding.top + ih - ((v - minVal) / (maxVal - minVal)) * ih;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   });
-  setInterval(fetchLogs,30_000);
-  setInterval(fetchMetrics,60_000);
-  setInterval(fetchAlarms,60_000);
-});
+  ctx.lineTo(padding.left + iw, padding.top + ih);
+  ctx.lineTo(padding.left, padding.top + ih);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  ctx.strokeStyle = '#00d4ff';
+  ctx.lineWidth = 2;
+  ctx.shadowColor = '#00d4ff';
+  ctx.shadowBlur = 4;
+  chartData.forEach((v, i) => {
+    const x = padding.left + (i / (chartData.length - 1)) * iw;
+    const y = padding.top + ih - ((v - minVal) / (maxVal - minVal)) * ih;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Labels
+  ctx.fillStyle = 'rgba(74,122,144,0.7)';
+  ctx.font = '8px Share Tech Mono';
+  ctx.textAlign = 'center';
+  const step = Math.max(1, Math.floor(chartLabels.length / 5));
+  chartLabels.forEach((lbl, i) => {
+    if (i % step === 0) {
+      const x = padding.left + (i / (chartLabels.length - 1)) * iw;
+      ctx.fillText(lbl, x, padding.top + ih + 15);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════
+
+let notifTimer;
+function showNotif(cls, title, msg) {
+  const el = document.getElementById('notif');
+  const titleEl = document.getElementById('notifTitle');
+  const msgEl = document.getElementById('notifMsg');
+
+  el.className = 'notif';
+  titleEl.className = 'notif-title';
+
+  titleEl.textContent = title;
+  msgEl.textContent = msg;
+
+  el.classList.add(cls);
+  titleEl.classList.add(cls);
+  el.classList.add('show');
+
+  if (notifTimer) clearTimeout(notifTimer);
+  notifTimer = setTimeout(() => el.classList.remove('show'), 5000);
+}
+
+// ═══════════════════════════════════════════════════════════
+// CLOCK
+// ═══════════════════════════════════════════════════════════
+
+function updateClock() {
+  const now = new Date();
+  document.getElementById('headerTime').textContent =
+    now.toLocaleDateString('fr-FR') + ' · ' + now.toLocaleTimeString('fr-FR');
+}
+
+setInterval(updateClock, 1000);
+updateClock();
+
+// ═══════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════
+
+window.addEventListener('resize', drawChart);
+
+// Restore non-sensitive config
+try {
+  const saved = JSON.parse(sessionStorage.getItem('soc_cfg') || '{}');
+  if (saved.region) {
+    Object.assign(cfg, saved);
+    document.getElementById('cfgRegion').value = cfg.region;
+    document.getElementById('cfgLogGroup').value = cfg.logGroup;
+    document.getElementById('cfgCluster').value = cfg.cluster;
+    document.getElementById('cfgService').value = cfg.service;
+    document.getElementById('cfgEmail').value = cfg.email;
+    document.getElementById('cfgSNS').value = cfg.sns;
+    document.getElementById('footerRegion').textContent = `Région: ${cfg.region}`;
+    document.getElementById('logGroupLabel').textContent = cfg.logGroup;
+    document.getElementById('clusterInfo').textContent = `AWS · ${cfg.region} · ${cfg.cluster}`;
+  }
+} catch(e) {}
+
+console.log('%c SOC Dashboard initialisé. Entrez vos credentials AWS pour commencer.', 'color: #00d4ff; font-family: monospace; font-size: 14px;');
 </script>
 </body>
 </html>
