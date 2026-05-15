@@ -28,7 +28,7 @@ spec:
       containers:
       - name: app
         image: wassimoz/devsecops-project:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - name: http
           containerPort: 5000

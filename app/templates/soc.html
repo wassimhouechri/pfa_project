@@ -47,7 +47,6 @@
     z-index: 0;
   }
 
-  /* SCANLINE EFFECT */
   body::after {
     content: '';
     position: fixed;
@@ -116,6 +115,13 @@
     font-family: 'Share Tech Mono', monospace;
     font-size: 11px;
     color: var(--green);
+    transition: all 0.4s;
+  }
+
+  .status-badge.error-state {
+    background: rgba(255,51,102,0.08);
+    border-color: rgba(255,51,102,0.3);
+    color: var(--danger);
   }
 
   .status-dot {
@@ -124,6 +130,8 @@
     background: var(--green);
     animation: blink 1.5s ease-in-out infinite;
   }
+
+  .status-badge.error-state .status-dot { background: var(--danger); }
 
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
 
@@ -181,66 +189,49 @@
 
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  /* ── CONFIG PANEL ── */
-  .config-panel {
+  /* ── POLLING STATUS BAR ── */
+  .polling-bar {
     position: relative; z-index: 10;
-    background: rgba(13,31,45,0.9);
+    background: rgba(6,15,21,0.8);
     border-bottom: 1px solid var(--border);
-    padding: 0;
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.4s ease, padding 0.4s ease;
-  }
-
-  .config-panel.open {
-    max-height: 400px;
-    padding: 20px 24px;
-  }
-
-  .config-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 14px;
-    margin-bottom: 14px;
-  }
-
-  .config-field label {
-    display: block;
+    padding: 6px 24px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-family: 'Share Tech Mono', monospace;
     font-size: 10px;
-    font-family: 'Share Tech Mono', monospace;
     color: var(--textdim);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 5px;
   }
 
-  .config-field input, .config-field select {
-    width: 100%;
-    background: var(--bg3);
-    border: 1px solid var(--muted);
-    color: var(--text);
-    padding: 8px 10px;
-    font-family: 'Share Tech Mono', monospace;
-    font-size: 12px;
-    border-radius: 4px;
-    outline: none;
-    transition: border-color 0.2s;
+  .poll-indicator {
+    display: flex; align-items: center; gap: 6px;
   }
 
-  .config-field input:focus, .config-field select:focus {
-    border-color: var(--accent);
+  .poll-dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--textdim);
+    transition: background 0.3s;
   }
 
-  .config-field input[type="password"] { letter-spacing: 2px; }
+  .poll-dot.active { background: var(--accent); animation: blink 0.4s ease-in-out 3; }
+  .poll-dot.ok     { background: var(--green); }
+  .poll-dot.error  { background: var(--danger); }
 
-  .config-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-
-  .config-hint {
-    font-size: 11px;
-    color: var(--textdim);
-    font-family: 'Share Tech Mono', monospace;
+  .poll-progress {
     flex: 1;
-    min-width: 200px;
+    height: 2px;
+    background: var(--bg3);
+    border-radius: 1px;
+    overflow: hidden;
+    max-width: 200px;
+  }
+
+  .poll-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 1px;
+    transition: width 1s linear;
   }
 
   /* ── ATTACK BANNER ── */
@@ -277,6 +268,18 @@
     font-size: 12px;
     color: rgba(255,100,130,0.9);
     margin-top: 2px;
+  }
+
+  .attack-close {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    font-size: 14px;
+    padding: 4px 10px;
+    cursor: pointer;
+    border-radius: 3px;
+    font-family: 'Share Tech Mono', monospace;
   }
 
   /* ── MAIN LAYOUT ── */
@@ -470,19 +473,22 @@
   @keyframes logFadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none} }
 
   .log-ts { color: var(--textdim); white-space: nowrap; flex-shrink: 0; }
+  .log-level {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    align-self: center;
+  }
+  .log-level.ERROR { background: rgba(255,51,102,0.2); color: var(--danger); }
+  .log-level.WARN  { background: rgba(255,170,0,0.2); color: var(--warn); }
+  .log-level.INFO  { background: rgba(0,212,255,0.1); color: var(--cyan); }
+
   .log-msg { word-break: break-all; flex: 1; }
 
-  .log-entry.error   .log-msg { color: var(--danger); }
-  .log-entry.warn    .log-msg { color: var(--warn); }
-  .log-entry.success .log-msg { color: var(--green); }
-  .log-entry.info    .log-msg { color: var(--text); }
-
-  .log-entry.attack {
-    background: rgba(255,51,102,0.08);
-    border-radius: 3px;
-    padding: 4px 6px;
-    margin: 2px 0;
-  }
+  .log-entry.ERROR .log-msg { color: var(--danger); }
+  .log-entry.WARN  .log-msg { color: var(--warn); }
+  .log-entry.INFO  .log-msg { color: var(--text); }
 
   /* ── CHART ── */
   .chart-wrap {
@@ -627,9 +633,59 @@
     height: 1px;
     background: var(--border);
   }
+
+  /* ── SESSION EXPIRED OVERLAY ── */
+  .session-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(3,10,14,0.92);
+    z-index: 99999;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .session-overlay.show { display: flex; }
+
+  .session-box {
+    background: var(--panel);
+    border: 1px solid var(--danger);
+    border-radius: 8px;
+    padding: 40px 50px;
+    text-align: center;
+    max-width: 400px;
+  }
+
+  .session-box h2 {
+    font-family: 'Orbitron', monospace;
+    color: var(--danger);
+    font-size: 18px;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+  }
+
+  .session-box p {
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--textdim);
+    font-size: 12px;
+    margin-bottom: 24px;
+  }
 </style>
 </head>
 <body>
+
+<!-- SESSION EXPIRED OVERLAY -->
+<div class="session-overlay" id="sessionOverlay">
+  <div class="session-box">
+    <h2>⚠️ SESSION EXPIRÉE</h2>
+    <p>Votre session a expiré. Veuillez vous reconnecter pour accéder au SOC Dashboard.</p>
+    <a href="/login" class="btn btn-danger" style="display:inline-block;text-decoration:none;padding:10px 28px;">
+      🔐 SE RECONNECTER
+    </a>
+  </div>
+</div>
 
 <!-- HEADER -->
 <header class="header">
@@ -637,67 +693,42 @@
     <div class="shield-icon">🛡️</div>
     <div class="header-title">
       <h1>Security Operations Center</h1>
-      <p id="clusterInfo">AWS · us-east-1 · Configurer ci-dessous ↓</p>
+      <p id="clusterInfo">AWS · us-east-1 · ECS devsecops-cluster</p>
     </div>
   </div>
   <div class="header-center">
-    <div class="status-badge">
+    <div class="status-badge" id="statusBadge">
       <span class="status-dot"></span>
-      <span id="systemStatus">SYSTÈME ACTIF</span>
+      <span id="systemStatus">CONNEXION...</span>
     </div>
     <div class="header-time" id="headerTime">--</div>
   </div>
   <div class="header-right">
-    <button class="btn btn-primary" onclick="toggleConfig()" id="cfgBtn">⚙️ CONFIG AWS</button>
     <button class="btn btn-primary" onclick="refreshAll()" id="refreshBtn">🔄 REFRESH</button>
     <button class="btn btn-danger" onclick="sendTestAlert()" id="testBtn">🚨 TEST ALERTE</button>
+    <a href="/dashboard" class="btn btn-primary" style="text-decoration:none">← Dashboard</a>
   </div>
 </header>
 
-<!-- CONFIG PANEL -->
-<div class="config-panel" id="configPanel">
-  <div style="margin-bottom:14px; font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--warn);">
-    ⚠️ Les credentials AWS sont utilisés directement depuis votre navigateur via l'API CloudWatch. Ne partagez jamais cette page.
+<!-- POLLING STATUS BAR -->
+<div class="polling-bar">
+  <div class="poll-indicator">
+    <div class="poll-dot" id="pollDotLogs"></div>
+    <span>Logs</span>
   </div>
-  <div class="config-grid">
-    <div class="config-field">
-      <label>AWS Access Key ID</label>
-      <input type="password" id="cfgKeyId" placeholder="AKIAIOSFODNN7EXAMPLE" autocomplete="off">
-    </div>
-    <div class="config-field">
-      <label>AWS Secret Access Key</label>
-      <input type="password" id="cfgSecret" placeholder="wJalrXUtnFEMI/K7MDENG/..." autocomplete="off">
-    </div>
-    <div class="config-field">
-      <label>AWS Region</label>
-      <input type="text" id="cfgRegion" placeholder="us-east-1" value="us-east-1">
-    </div>
-    <div class="config-field">
-      <label>Log Group Name</label>
-      <input type="text" id="cfgLogGroup" placeholder="/ecs/devsecops" value="/ecs/devsecops">
-    </div>
-    <div class="config-field">
-      <label>ECS Cluster Name</label>
-      <input type="text" id="cfgCluster" placeholder="devsecops-cluster" value="devsecops-cluster">
-    </div>
-    <div class="config-field">
-      <label>ECS Service Name</label>
-      <input type="text" id="cfgService" placeholder="devsecops-service" value="devsecops-service">
-    </div>
-    <div class="config-field">
-      <label>Email alerte (SNS / alertes)</label>
-      <input type="text" id="cfgEmail" placeholder="votre@email.com">
-    </div>
-    <div class="config-field">
-      <label>AWS SNS Topic ARN (pour alertes)</label>
-      <input type="text" id="cfgSNS" placeholder="arn:aws:sns:us-east-1:123:SOC-Alerts">
-    </div>
+  <div class="poll-indicator">
+    <div class="poll-dot" id="pollDotMetrics"></div>
+    <span>Métriques</span>
   </div>
-  <div class="config-actions">
-    <button class="btn btn-primary" onclick="saveConfig()">💾 SAUVEGARDER & CONNECTER</button>
-    <button class="btn" onclick="clearConfig()" style="color:var(--danger);border-color:var(--danger);">🗑️ EFFACER</button>
-    <span class="config-hint" id="configStatus">Entrez vos credentials AWS pour commencer.</span>
+  <div class="poll-indicator">
+    <div class="poll-dot" id="pollDotAlarms"></div>
+    <span>Alarmes</span>
   </div>
+  <span id="pollStatus">Initialisation...</span>
+  <div class="poll-progress">
+    <div class="poll-progress-fill" id="pollProgressFill" style="width:0%"></div>
+  </div>
+  <span id="nextRefreshLabel">Prochain refresh: --</span>
 </div>
 
 <!-- ATTACK BANNER -->
@@ -707,6 +738,7 @@
     <h3>🚨 ATTAQUE DÉTECTÉE</h3>
     <p id="attackDetail">Activité suspecte détectée sur votre infrastructure</p>
   </div>
+  <button class="attack-close" onclick="document.getElementById('attackBanner').classList.remove('active')">✕</button>
 </div>
 
 <!-- MAIN -->
@@ -794,7 +826,7 @@
         <div id="metricBars">
           <div class="empty-state"><span class="spinner"></span>Chargement des métriques...</div>
         </div>
-        <div class="section-title" style="margin-top:16px">Activité (30 min)</div>
+        <div class="section-title" style="margin-top:16px">Activité CPU (historique)</div>
         <div class="chart-wrap">
           <canvas id="activityChart"></canvas>
         </div>
@@ -814,7 +846,7 @@
       </div>
     </div>
     <div class="full-logs" id="fullLogs">
-      <div class="empty-state">Configurez vos credentials AWS puis cliquez sur REFRESH pour charger les logs réels.</div>
+      <div class="empty-state"><span class="spinner"></span>Chargement des logs depuis le backend Flask...</div>
     </div>
   </div>
 
@@ -822,9 +854,9 @@
 
 <!-- FOOTER -->
 <footer class="footer">
-  <span>SOC Dashboard v2.0 · DevSecOps · AWS Academy</span>
+  <span>SOC Dashboard v3.0 · DevSecOps · Flask + AWS boto3</span>
   <span id="footerRefresh">Dernière mise à jour: —</span>
-  <span id="footerRegion">Région: —</span>
+  <span>Polling: 10s logs · 30s métriques/alarmes</span>
 </footer>
 
 <!-- NOTIFICATION -->
@@ -835,176 +867,277 @@
 
 <script>
 // ═══════════════════════════════════════════════════════════
-// AWS SIGNATURE V4 — Pure browser implementation
+//  SOC Dashboard v3.0
+//  Tous les appels AWS passent par le backend Flask (boto3)
+//  Routes utilisées :
+//    GET  /api/soc/logs      → CloudWatch Logs
+//    GET  /api/soc/metrics   → CloudWatch Metrics (CPU, Mem)
+//    GET  /api/soc/alarms    → CloudWatch Alarms
+//    POST /api/soc/test-alert → SNS publish
 // ═══════════════════════════════════════════════════════════
 
-async function hmac(key, data) {
-  const k = typeof key === 'string' ? new TextEncoder().encode(key) : key;
-  const cryptoKey = await crypto.subtle.importKey('raw', k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  return crypto.subtle.sign('HMAC', cryptoKey, typeof data === 'string' ? new TextEncoder().encode(data) : data);
-}
+// ─── État global ───────────────────────────────────────────
+let logEntries    = [];
+let chartData     = [];
+let chartLabels   = [];
 
-async function sha256(data) {
-  return crypto.subtle.digest('SHA-256', typeof data === 'string' ? new TextEncoder().encode(data) : data);
-}
+// Intervalles de polling
+const POLL_LOGS    = 10000;   // 10s
+const POLL_METRICS = 30000;   // 30s
+const POLL_ALARMS  = 30000;   // 30s
 
-function hex(buf) {
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
-}
+let logsTimer    = null;
+let metricsTimer = null;
+let alarmsTimer  = null;
+let countdownTimer = null;
+let nextRefreshAt  = 0;
 
-async function signRequest(method, host, path, body, service, region, keyId, secret) {
-  const now = new Date();
-  const amzDate = now.toISOString().replace(/[:-]/g,'').replace(/\.\d{3}/,'');
-  const dateStamp = amzDate.slice(0, 8);
-
-  const payloadHash = hex(await sha256(body));
-  const headers = {
-    'content-type': 'application/x-amz-json-1.1',
-    'host': host,
-    'x-amz-date': amzDate,
-    'x-amz-target': ''  // set per-call
-  };
-
-  const canonicalHeaders = `content-type:${headers['content-type']}\nhost:${host}\nx-amz-date:${amzDate}\n`;
-  const signedHeaders = 'content-type;host;x-amz-date';
-  const canonicalRequest = `${method}\n${path}\n\n${canonicalHeaders}\n${signedHeaders}\n${payloadHash}`;
-
-  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
-  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${credentialScope}\n${hex(await sha256(canonicalRequest))}`;
-
-  const enc = s => new TextEncoder().encode(s);
-  const kDate    = await hmac(enc(`AWS4${secret}`), dateStamp);
-  const kRegion  = await hmac(kDate, region);
-  const kService = await hmac(kRegion, service);
-  const kSigning = await hmac(kService, 'aws4_request');
-  const signature = hex(await hmac(kSigning, stringToSign));
-
-  const authHeader = `AWS4-HMAC-SHA256 Credential=${keyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-  return { amzDate, authHeader, payloadHash };
-}
-
-async function awsRequest(service, target, payload, region, keyId, secret) {
-  const host = `${service}.${region}.amazonaws.com`;
-  const body = JSON.stringify(payload);
-
-  const { amzDate, authHeader } = await signRequest('POST', host, '/', body, service, region, keyId, secret);
-
-  const response = await fetch(`https://${host}/`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-amz-json-1.1',
-      'X-Amz-Date': amzDate,
-      'X-Amz-Target': target,
-      'Authorization': authHeader
-    },
-    body
+// ─── Utilitaire fetch avec gestion session ─────────────────
+async function apiFetch(url, options = {}) {
+  const res = await fetch(url, {
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    ...options
   });
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`AWS ${response.status}: ${err}`);
+  // Session expirée → afficher overlay
+  if (res.status === 401) {
+    const data = await res.json().catch(() => ({}));
+    if (data.error === 'session_expired') {
+      document.getElementById('sessionOverlay').classList.add('show');
+      throw new Error('session_expired');
+    }
+    // Redirect classique
+    window.location.href = '/login';
+    throw new Error('not_authenticated');
   }
 
-  return response.json();
+  return res;
+}
+
+// ─── Dot d'état polling ────────────────────────────────────
+function setDot(id, state) {
+  const el = document.getElementById(id);
+  el.className = 'poll-dot ' + state;
+}
+
+// ─── Statut global header ──────────────────────────────────
+function setStatus(ok, text) {
+  const badge = document.getElementById('statusBadge');
+  const status = document.getElementById('systemStatus');
+  status.textContent = text;
+  badge.classList.toggle('error-state', !ok);
 }
 
 // ═══════════════════════════════════════════════════════════
-// STATE
+// FETCH LOGS  →  GET /api/soc/logs
 // ═══════════════════════════════════════════════════════════
-
-let cfg = {
-  keyId: '', secret: '', region: 'us-east-1',
-  logGroup: '/ecs/devsecops', cluster: 'devsecops-cluster',
-  service: 'devsecops-service', email: '', sns: ''
-};
-
-let attackCount = 0;
-let chartData = [];
-let chartLabels = [];
-let refreshInterval = null;
-let logEntries = [];
-
-// ═══════════════════════════════════════════════════════════
-// CONFIG
-// ═══════════════════════════════════════════════════════════
-
-function toggleConfig() {
-  const p = document.getElementById('configPanel');
-  p.classList.toggle('open');
-}
-
-function saveConfig() {
-  cfg.keyId    = document.getElementById('cfgKeyId').value.trim();
-  cfg.secret   = document.getElementById('cfgSecret').value.trim();
-  cfg.region   = document.getElementById('cfgRegion').value.trim() || 'us-east-1';
-  cfg.logGroup = document.getElementById('cfgLogGroup').value.trim() || '/ecs/devsecops';
-  cfg.cluster  = document.getElementById('cfgCluster').value.trim() || 'devsecops-cluster';
-  cfg.service  = document.getElementById('cfgService').value.trim() || 'devsecops-service';
-  cfg.email    = document.getElementById('cfgEmail').value.trim();
-  cfg.sns      = document.getElementById('cfgSNS').value.trim();
-
-  if (!cfg.keyId || !cfg.secret) {
-    document.getElementById('configStatus').textContent = '⚠️ Entrez votre Access Key ID et Secret Key.';
-    document.getElementById('configStatus').style.color = 'var(--danger)';
-    return;
-  }
-
-  document.getElementById('clusterInfo').textContent = `AWS · ${cfg.region} · ${cfg.cluster}`;
-  document.getElementById('logGroupLabel').textContent = cfg.logGroup;
-  document.getElementById('footerRegion').textContent = `Région: ${cfg.region}`;
-  document.getElementById('configStatus').textContent = '✅ Connecté — Chargement des données...';
-  document.getElementById('configStatus').style.color = 'var(--green)';
-
-  // Save to sessionStorage (not localStorage per security)
+async function fetchLogs() {
+  setDot('pollDotLogs', 'active');
   try {
-    sessionStorage.setItem('soc_cfg', JSON.stringify({
-      region: cfg.region, logGroup: cfg.logGroup,
-      cluster: cfg.cluster, service: cfg.service, email: cfg.email, sns: cfg.sns
-    }));
-  } catch(e) {}
+    const res  = await apiFetch('/api/soc/logs');
+    const data = await res.json();
 
-  document.getElementById('configPanel').classList.remove('open');
-  refreshAll();
+    if (!data.ok) {
+      appendSystemLog('⚠️ Logs: ' + data.error, 'WARN');
+      setDot('pollDotLogs', 'error');
+      return;
+    }
 
-  // Auto-refresh every 30s
-  if (refreshInterval) clearInterval(refreshInterval);
-  refreshInterval = setInterval(refreshAll, 30000);
+    const events = data.events || [];
+
+    // Compter erreurs et accès refusés
+    let errors = 0, unauth = 0, requests = 0;
+    events.forEach(ev => {
+      if (ev.level === 'ERROR') errors++;
+      if (/401|403|unauthorized|forbidden/i.test(ev.msg)) unauth++;
+      if (/\b(200|201|204|GET|POST|PUT|DELETE)\b/.test(ev.msg)) requests++;
+    });
+
+    // Détection attaque
+    if (unauth > 10) triggerAttackDetection(`${unauth} accès refusés — possible attaque par force brute !`);
+    if (errors > 20) triggerAttackDetection(`${errors} erreurs ECS — service potentiellement compromis !`);
+
+    // KPIs logs
+    setKpi('kpiErrors', 'kpiErrorsVal', 'kpiErrorsSub', errors, 'Dernière heure', errors > 0);
+    setKpi('kpiUnauth', 'kpiUnauthVal', 'kpiUnauthSub', unauth, '401 + 403 détectés', unauth > 5);
+    setKpi('kpiRequests', 'kpiRequestsVal', 'kpiRequestsSub', requests, 'Requêtes totales', false);
+
+    // Render logs
+    const logsEl = document.getElementById('fullLogs');
+    if (!events.length) {
+      logsEl.innerHTML = '<div class="empty-state">Aucun log trouvé dans la fenêtre temporelle.</div>';
+    } else {
+      logEntries = events;
+      renderLogs();
+    }
+
+    document.getElementById('logsTs').textContent = new Date().toLocaleTimeString('fr-FR');
+    setDot('pollDotLogs', 'ok');
+
+  } catch(e) {
+    if (e.message !== 'session_expired') {
+      appendSystemLog('❌ Erreur logs: ' + e.message, 'ERROR');
+      setDot('pollDotLogs', 'error');
+    }
+  }
 }
 
-function clearConfig() {
-  cfg = { keyId:'', secret:'', region:'us-east-1', logGroup:'/ecs/devsecops', cluster:'devsecops-cluster', service:'devsecops-service', email:'', sns:'' };
-  ['cfgKeyId','cfgSecret'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('configStatus').textContent = 'Credentials effacés.';
-  document.getElementById('configStatus').style.color = 'var(--textdim)';
-  try { sessionStorage.removeItem('soc_cfg'); } catch(e) {}
+// ═══════════════════════════════════════════════════════════
+// FETCH METRICS  →  GET /api/soc/metrics
+// ═══════════════════════════════════════════════════════════
+async function fetchMetrics() {
+  setDot('pollDotMetrics', 'active');
+  try {
+    const res  = await apiFetch('/api/soc/metrics');
+    const data = await res.json();
+
+    if (!data.ok) {
+      appendSystemLog('⚠️ Métriques: ' + data.error, 'WARN');
+      setDot('pollDotMetrics', 'error');
+      return;
+    }
+
+    const cpu    = data.cpu  ?? 0;
+    const mem    = data.mem  ?? 0;
+    const errors = data.errors ?? 0;
+    const unauth = data.unauth ?? 0;
+
+    // KPI CPU
+    setKpi('kpiCPU', 'kpiCPUVal', 'kpiCPUSub', cpu + '%', 'Service ECS', cpu > 80);
+    setKpi('kpiMem', 'kpiMemVal', 'kpiMemSub', mem + '%', 'Cluster ECS', mem > 85);
+
+    if (mem > 85) triggerAttackDetection(`Mémoire ECS critique: ${mem}% !`);
+
+    // Barres de métriques
+    const barsEl = document.getElementById('metricBars');
+    barsEl.innerHTML = `
+      ${renderBar('CPU ECS', cpu + '%', cpu, cpu > 80)}
+      ${renderBar('Mémoire ECS', mem + '%', mem, mem > 80)}
+      ${errors > 0 ? renderBar('Erreurs (custom)', errors, Math.min(errors, 100), true) : ''}
+      ${unauth > 0 ? renderBar('Accès refusés', unauth, Math.min(unauth, 100), true) : ''}
+    `;
+
+    // Mettre à jour le graphique avec l'historique CPU
+    chartData   = [...chartData, cpu].slice(-12);
+    chartLabels = [...chartLabels, new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})].slice(-12);
+    drawChart();
+
+    document.getElementById('metricsTs').textContent = new Date().toLocaleTimeString('fr-FR');
+    setDot('pollDotMetrics', 'ok');
+
+  } catch(e) {
+    if (e.message !== 'session_expired') {
+      appendSystemLog('❌ Erreur métriques: ' + e.message, 'ERROR');
+      setDot('pollDotMetrics', 'error');
+    }
+  }
 }
 
-function isConfigured() {
-  return cfg.keyId && cfg.secret;
+// ═══════════════════════════════════════════════════════════
+// FETCH ALARMS  →  GET /api/soc/alarms
+// ═══════════════════════════════════════════════════════════
+async function fetchAlarms() {
+  setDot('pollDotAlarms', 'active');
+  try {
+    const res  = await apiFetch('/api/soc/alarms');
+    const data = await res.json();
+
+    if (!data.ok) {
+      appendSystemLog('⚠️ Alarmes: ' + data.error, 'WARN');
+      setDot('pollDotAlarms', 'error');
+      return;
+    }
+
+    const alarms       = data.alarms || [];
+    const activeAlarms = alarms.filter(a => a.state === 'ALARM');
+
+    // KPI alarmes
+    setKpi('kpiAlarms', 'kpiAlarmsVal', 'kpiAlarmsSub', activeAlarms.length,
+      `${alarms.length} alarmes configurées`, activeAlarms.length > 0);
+
+    if (activeAlarms.length > 0) {
+      triggerAttackDetection(`${activeAlarms.length} alarme(s) CloudWatch en état ALARM !`);
+    }
+
+    // Render
+    const el = document.getElementById('alarmsList');
+    if (!alarms.length) {
+      el.innerHTML = '<div class="empty-state">Aucune alarme trouvée.</div>';
+    } else {
+      el.innerHTML = alarms.map(a => `
+        <div class="alarm-item">
+          <div class="alarm-dot ${a.state}"></div>
+          <div class="alarm-info">
+            <div class="alarm-name">${escHtml(a.name)}</div>
+            <div class="alarm-desc">${escHtml(a.desc || a.reason || '—')}</div>
+          </div>
+          <div class="alarm-state ${a.state}">${a.state}</div>
+        </div>
+      `).join('');
+    }
+
+    document.getElementById('alarmsTs').textContent = new Date().toLocaleTimeString('fr-FR');
+    setDot('pollDotAlarms', 'ok');
+
+  } catch(e) {
+    if (e.message !== 'session_expired') {
+      appendSystemLog('❌ Erreur alarmes: ' + e.message, 'ERROR');
+      setDot('pollDotAlarms', 'error');
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// TEST ALERT  →  POST /api/soc/test-alert
+// ═══════════════════════════════════════════════════════════
+async function sendTestAlert() {
+  const btn = document.getElementById('testBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ ENVOI...';
+
+  try {
+    const res  = await apiFetch('/api/soc/test-alert', { method: 'POST' });
+    const data = await res.json();
+
+    if (data.ok) {
+      showNotif('success-notif', '✅ Alerte envoyée', data.message || 'Alerte SNS publiée.');
+      triggerAttackDetection('TEST — Alerte SOC simulée. Vérifiez votre email.');
+      appendSystemLog('🚨 TEST ALERTE envoyée depuis SOC Dashboard', 'ERROR');
+    } else {
+      showNotif('danger-notif', '❌ Erreur', data.error || 'Erreur inconnue.');
+    }
+  } catch(e) {
+    if (e.message !== 'session_expired') {
+      showNotif('danger-notif', '❌ Erreur réseau', e.message.slice(0, 100));
+    }
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🚨 TEST ALERTE';
 }
 
 // ═══════════════════════════════════════════════════════════
 // REFRESH ALL
 // ═══════════════════════════════════════════════════════════
-
 async function refreshAll() {
-  if (!isConfigured()) {
-    showNotif('info-notif', 'Configuration requise', 'Entrez vos credentials AWS dans la configuration.');
-    document.getElementById('configPanel').classList.add('open');
-    return;
-  }
-
   const btn = document.getElementById('refreshBtn');
   btn.disabled = true;
   btn.textContent = '⏳ CHARGEMENT...';
 
+  document.getElementById('pollStatus').textContent = 'Rafraîchissement...';
+
   try {
-    await Promise.all([fetchAlarms(), fetchMetrics(), fetchLogs()]);
+    await Promise.all([fetchLogs(), fetchMetrics(), fetchAlarms()]);
     const ts = new Date().toLocaleTimeString('fr-FR');
     document.getElementById('footerRefresh').textContent = `Dernière mise à jour: ${ts}`;
+    document.getElementById('pollStatus').textContent = 'Données à jour ✓';
+    setStatus(true, 'SYSTÈME ACTIF');
   } catch(e) {
-    showNotif('danger-notif', 'Erreur AWS', e.message.slice(0, 100));
+    if (e.message !== 'session_expired') {
+      setStatus(false, 'ERREUR CONNEXION');
+      document.getElementById('pollStatus').textContent = 'Erreur de connexion';
+    }
   }
 
   btn.disabled = false;
@@ -1012,145 +1145,70 @@ async function refreshAll() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// CLOUDWATCH ALARMS
+// POLLING AUTOMATIQUE
 // ═══════════════════════════════════════════════════════════
+function startPolling() {
+  // Logs : toutes les 10s
+  logsTimer = setInterval(fetchLogs, POLL_LOGS);
 
-async function fetchAlarms() {
-  const data = await awsRequest(
-    'monitoring',
-    'GraniteServiceVersion20100801.DescribeAlarms',
-    { MaxRecords: 50 },
-    cfg.region, cfg.keyId, cfg.secret
-  );
+  // Métriques : toutes les 30s
+  metricsTimer = setInterval(fetchMetrics, POLL_METRICS);
 
-  const alarms = data.MetricAlarms || [];
-  const activeAlarms = alarms.filter(a => a.StateValue === 'ALARM');
+  // Alarmes : toutes les 30s
+  alarmsTimer = setInterval(fetchAlarms, POLL_ALARMS);
 
-  // Update KPI
-  document.getElementById('kpiAlarmsVal').textContent = activeAlarms.length;
-  document.getElementById('kpiAlarmsVal').classList.remove('kpi-loading');
-  document.getElementById('kpiAlarmsSub').textContent = `${alarms.length} alarmes configurées`;
-
-  const card = document.getElementById('kpiAlarms');
-  if (activeAlarms.length > 0) {
-    card.style.setProperty('--kpi-color', 'var(--danger)');
-    triggerAttackDetection(`${activeAlarms.length} alarme(s) CloudWatch en état ALARM !`);
-  }
-
-  // Render
-  const el = document.getElementById('alarmsList');
-  if (!alarms.length) {
-    el.innerHTML = '<div class="empty-state">Aucune alarme trouvée dans cette région.</div>';
-  } else {
-    el.innerHTML = alarms.map(a => `
-      <div class="alarm-item">
-        <div class="alarm-dot ${a.StateValue}"></div>
-        <div class="alarm-info">
-          <div class="alarm-name">${a.AlarmName}</div>
-          <div class="alarm-desc">${a.AlarmDescription || a.MetricName || '—'}</div>
-        </div>
-        <div class="alarm-state ${a.StateValue}">${a.StateValue}</div>
-      </div>
-    `).join('');
-  }
-
-  document.getElementById('alarmsTs').textContent = new Date().toLocaleTimeString('fr-FR');
+  // Countdown visuel basé sur le cycle le plus court (logs 10s)
+  nextRefreshAt = Date.now() + POLL_LOGS;
+  countdownTimer = setInterval(() => {
+    const remaining = Math.max(0, Math.ceil((nextRefreshAt - Date.now()) / 1000));
+    document.getElementById('nextRefreshLabel').textContent = `Prochain refresh: ${remaining}s`;
+    const pct = 100 - (remaining / (POLL_LOGS / 1000)) * 100;
+    document.getElementById('pollProgressFill').style.width = pct + '%';
+    if (remaining === 0) nextRefreshAt = Date.now() + POLL_LOGS;
+  }, 500);
 }
 
 // ═══════════════════════════════════════════════════════════
-// CLOUDWATCH METRICS (ECS CPU + MEM)
+// HELPERS UI
 // ═══════════════════════════════════════════════════════════
 
-async function fetchMetrics() {
-  const now = new Date();
-  const start = new Date(now - 30 * 60 * 1000);
+function setKpi(cardId, valId, subId, value, sub, isDanger) {
+  const valEl = document.getElementById(valId);
+  const subEl = document.getElementById(subId);
+  const card  = document.getElementById(cardId);
 
-  const queries = [
-    {
-      Id: 'cpu',
-      MetricStat: {
-        Metric: {
-          Namespace: 'AWS/ECS',
-          MetricName: 'CPUUtilization',
-          Dimensions: [
-            { Name: 'ClusterName', Value: cfg.cluster },
-            { Name: 'ServiceName', Value: cfg.service }
-          ]
-        },
-        Period: 300,
-        Stat: 'Average'
-      }
-    },
-    {
-      Id: 'mem',
-      MetricStat: {
-        Metric: {
-          Namespace: 'AWS/ECS',
-          MetricName: 'MemoryUtilization',
-          Dimensions: [
-            { Name: 'ClusterName', Value: cfg.cluster },
-            { Name: 'ServiceName', Value: cfg.service }
-          ]
-        },
-        Period: 300,
-        Stat: 'Average'
-      }
-    }
-  ];
+  valEl.textContent = value;
+  valEl.classList.remove('kpi-loading');
+  if (subEl) subEl.textContent = sub;
+  if (isDanger) card.classList.add('danger');
+  else card.classList.remove('danger');
+}
 
-  const data = await awsRequest(
-    'monitoring',
-    'GraniteServiceVersion20100801.GetMetricData',
-    {
-      MetricDataQueries: queries,
-      StartTime: start.toISOString(),
-      EndTime: now.toISOString(),
-    },
-    cfg.region, cfg.keyId, cfg.secret
-  );
+function renderLogs() {
+  const logsEl = document.getElementById('fullLogs');
+  logsEl.innerHTML = logEntries.map(e => `
+    <div class="log-entry ${e.level}">
+      <span class="log-ts">[${e.time}]</span>
+      <span class="log-level ${e.level}">${e.level}</span>
+      <span class="log-msg">${escHtml(e.msg)}</span>
+    </div>
+  `).join('');
+  logsEl.scrollTop = logsEl.scrollHeight;
+}
 
-  const results = data.MetricDataResults || [];
-  const cpuResult = results.find(r => r.Id === 'cpu');
-  const memResult = results.find(r => r.Id === 'mem');
+function appendSystemLog(msg, level = 'INFO') {
+  const logsEl = document.getElementById('fullLogs');
+  const ts = new Date().toLocaleTimeString('fr-FR');
+  const div = document.createElement('div');
+  div.className = `log-entry ${level}`;
+  div.innerHTML = `<span class="log-ts">[${ts}]</span><span class="log-level ${level}">${level}</span><span class="log-msg">${escHtml(msg)}</span>`;
+  logsEl.appendChild(div);
+  logsEl.scrollTop = logsEl.scrollHeight;
+}
 
-  const cpuVals = cpuResult?.Values || [];
-  const memVals = memResult?.Values || [];
-
-  const cpuLast = cpuVals.length ? cpuVals[0].toFixed(1) : null;
-  const memLast = memVals.length ? memVals[0].toFixed(1) : null;
-
-  // Update KPI
-  if (cpuLast !== null) {
-    document.getElementById('kpiCPUVal').textContent = cpuLast + '%';
-    document.getElementById('kpiCPUSub').textContent = `Service: ${cfg.service}`;
-    document.getElementById('kpiCPUVal').classList.remove('kpi-loading');
-  }
-
-  if (memLast !== null) {
-    document.getElementById('kpiMemVal').textContent = memLast + '%';
-    document.getElementById('kpiMemSub').textContent = `Cluster: ${cfg.cluster}`;
-    document.getElementById('kpiMemVal').classList.remove('kpi-loading');
-    if (parseFloat(memLast) > 85) {
-      triggerAttackDetection(`Mémoire ECS critique: ${memLast}% !`);
-    }
-  }
-
-  // Render bars
-  const barsEl = document.getElementById('metricBars');
-  barsEl.innerHTML = `
-    ${renderBar('CPU ECS', cpuLast !== null ? cpuLast : '—', cpuLast, parseFloat(cpuLast) > 80)}
-    ${renderBar('Mémoire ECS', memLast !== null ? memLast : '—', memLast, parseFloat(memLast) > 80)}
-  `;
-
-  // Chart data
-  if (cpuVals.length) {
-    const ts = cpuResult.Timestamps || [];
-    chartLabels = ts.map(t => new Date(t).toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})).reverse();
-    chartData = [...cpuVals].reverse();
-    drawChart();
-  }
-
-  document.getElementById('metricsTs').textContent = new Date().toLocaleTimeString('fr-FR');
+function clearLogs() {
+  logEntries = [];
+  document.getElementById('fullLogs').innerHTML = '<div class="empty-state">Logs vidés. En attente du prochain cycle de polling...</div>';
 }
 
 function renderBar(label, displayVal, pct, isWarn) {
@@ -1159,7 +1217,7 @@ function renderBar(label, displayVal, pct, isWarn) {
     <div class="metric-bar-wrap">
       <div class="metric-bar-label">
         <span>${label}</span>
-        <span>${displayVal}${displayVal !== '—' ? '%' : ''}</span>
+        <span>${displayVal}</span>
       </div>
       <div class="metric-bar-track">
         <div class="metric-bar-fill ${isWarn ? 'warn-bar' : ''}" style="width:${fillPct}%"></div>
@@ -1168,313 +1226,96 @@ function renderBar(label, displayVal, pct, isWarn) {
   `;
 }
 
-// ═══════════════════════════════════════════════════════════
-// CLOUDWATCH LOGS
-// ═══════════════════════════════════════════════════════════
-
-async function fetchLogs() {
-  const endTime = Date.now();
-  const startTime = endTime - 60 * 60 * 1000; // last 1h
-
-  // Get log streams first
-  let streams;
-  try {
-    const streamsData = await awsRequest(
-      'logs',
-      'Logs_20140328.DescribeLogStreams',
-      {
-        logGroupName: cfg.logGroup,
-        orderBy: 'LastEventTime',
-        descending: true,
-        limit: 5
-      },
-      cfg.region, cfg.keyId, cfg.secret
-    );
-    streams = (streamsData.logStreams || []).map(s => s.logStreamName);
-  } catch(e) {
-    appendSystemLog(`⚠️ Erreur log streams: ${e.message}`, 'warn');
-    return;
-  }
-
-  if (!streams.length) {
-    appendSystemLog('ℹ️ Aucun log stream trouvé dans ' + cfg.logGroup, 'info');
-    return;
-  }
-
-  // Filter logs
-  let filterData;
-  try {
-    filterData = await awsRequest(
-      'logs',
-      'Logs_20140328.FilterLogEvents',
-      {
-        logGroupName: cfg.logGroup,
-        startTime: startTime,
-        endTime: endTime,
-        limit: 100
-      },
-      cfg.region, cfg.keyId, cfg.secret
-    );
-  } catch(e) {
-    appendSystemLog(`⚠️ Erreur fetch logs: ${e.message}`, 'warn');
-    return;
-  }
-
-  const events = filterData.events || [];
-
-  // Parse & detect attacks
-  let errors = 0, unauth = 0, requests = 0;
-  const newEntries = [];
-
-  events.forEach(ev => {
-    const msg = ev.message || '';
-    const ts = new Date(ev.timestamp).toLocaleTimeString('fr-FR');
-
-    let cls = 'info';
-    let isAttack = false;
-
-    if (/\b(401|403|Unauthorized|Forbidden|Access Denied)\b/i.test(msg)) {
-      cls = 'warn'; unauth++;
-      if (unauth > 5) isAttack = true;
-    }
-
-    if (/\b(500|502|503|504|Error|Exception|CRITICAL|FATAL)\b/i.test(msg)) {
-      cls = 'error'; errors++;
-    }
-
-    if (/\b(200|201|204|GET|POST|PUT|DELETE)\b/.test(msg)) {
-      requests++;
-    }
-
-    if (/\b(sql injection|xss|attack|exploit|brute.?force|scanner|nmap|nikto|sqlmap)\b/i.test(msg)) {
-      cls = 'error'; isAttack = true;
-    }
-
-    if (isAttack) cls = 'attack';
-
-    newEntries.push({ ts, msg: msg.slice(0, 200), cls, isAttack });
-  });
-
-  // Detect attacks
-  if (unauth > 10) triggerAttackDetection(`${unauth} accès refusés détectés en 1h — possible attaque par force brute !`);
-  if (errors > 20) triggerAttackDetection(`${errors} erreurs ECS en 1h — service potentiellement compromis !`);
-
-  // Update KPIs
-  document.getElementById('kpiErrorsVal').textContent = errors;
-  document.getElementById('kpiErrorsSub').textContent = `Dernière heure`;
-  document.getElementById('kpiErrorsVal').classList.remove('kpi-loading');
-  if (errors > 0) document.getElementById('kpiErrors').classList.add('danger');
-
-  document.getElementById('kpiUnauthVal').textContent = unauth;
-  document.getElementById('kpiUnauthSub').textContent = `401 + 403 détectés`;
-  document.getElementById('kpiUnauthVal').classList.remove('kpi-loading');
-  if (unauth > 5) document.getElementById('kpiUnauth').classList.add('danger');
-
-  document.getElementById('kpiRequestsVal').textContent = requests;
-  document.getElementById('kpiRequestsSub').textContent = 'Requêtes totales';
-  document.getElementById('kpiRequestsVal').classList.remove('kpi-loading');
-
-  // Render logs
-  const logsEl = document.getElementById('fullLogs');
-  if (!newEntries.length) {
-    logsEl.innerHTML = '<div class="empty-state">Aucun log trouvé dans la fenêtre temporelle.</div>';
-  } else {
-    logEntries = newEntries;
-    renderLogs();
-  }
-
-  document.getElementById('logsTs').textContent = new Date().toLocaleTimeString('fr-FR');
-}
-
-function renderLogs() {
-  const logsEl = document.getElementById('fullLogs');
-  logsEl.innerHTML = logEntries.map(e => `
-    <div class="log-entry ${e.cls}">
-      <span class="log-ts">[${e.ts}]</span>
-      <span class="log-msg">${escHtml(e.msg)}</span>
-    </div>
-  `).join('');
-  logsEl.scrollTop = logsEl.scrollHeight;
-}
-
-function appendSystemLog(msg, cls='info') {
-  const logsEl = document.getElementById('fullLogs');
-  const ts = new Date().toLocaleTimeString('fr-FR');
-  const div = document.createElement('div');
-  div.className = `log-entry ${cls}`;
-  div.innerHTML = `<span class="log-ts">[${ts}]</span><span class="log-msg">${escHtml(msg)}</span>`;
-  logsEl.appendChild(div);
-  logsEl.scrollTop = logsEl.scrollHeight;
-}
-
-function clearLogs() {
-  logEntries = [];
-  document.getElementById('fullLogs').innerHTML = '<div class="empty-state">Logs vidés. Cliquez RELOAD pour recharger.</div>';
-}
-
-function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-// ═══════════════════════════════════════════════════════════
-// ATTACK DETECTION
-// ═══════════════════════════════════════════════════════════
-
 function triggerAttackDetection(detail) {
-  attackCount++;
   const banner = document.getElementById('attackBanner');
   document.getElementById('attackDetail').textContent = detail;
   banner.classList.add('active');
-
   showNotif('danger-notif', '🚨 ATTAQUE DÉTECTÉE', detail);
+  setTimeout(() => banner.classList.remove('active'), 30000);
+}
 
-  // Auto-hide after 30s
-  setTimeout(() => { banner.classList.remove('active'); }, 30000);
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 // ═══════════════════════════════════════════════════════════
-// TEST ALERT — Publishes to SNS or shows UI alert
+// CHART (Canvas — historique CPU temps réel)
 // ═══════════════════════════════════════════════════════════
-
-async function sendTestAlert() {
-  if (!isConfigured()) {
-    showNotif('danger-notif', 'Non configuré', 'Configurez vos credentials AWS d\'abord.');
-    document.getElementById('configPanel').classList.add('open');
-    return;
-  }
-
-  const btn = document.getElementById('testBtn');
-  btn.disabled = true;
-  btn.textContent = '⏳ ENVOI...';
-
-  const msg = `🚨 TEST ALERTE SOC — ${new Date().toISOString()} — Dashboard DevSecOps actif. Cluster: ${cfg.cluster}, Région: ${cfg.region}. Ceci est un test.`;
-
-  if (cfg.sns) {
-    // Real SNS publish
-    try {
-      await awsRequest(
-        'sns',
-        'AmazonSimpleNotificationService.Publish',
-        {
-          TopicArn: cfg.sns,
-          Message: msg,
-          Subject: '🚨 SOC Test Alert — DevSecOps Dashboard'
-        },
-        cfg.region, cfg.keyId, cfg.secret
-      );
-      showNotif('success-notif', '✅ Alerte envoyée', `Message publié sur SNS. Email envoyé si abonné.`);
-    } catch(e) {
-      showNotif('danger-notif', 'Erreur SNS', e.message.slice(0, 150));
-    }
-  } else {
-    // CloudWatch PutMetricAlarm test trigger via PutMetricData
-    try {
-      await awsRequest(
-        'monitoring',
-        'GraniteServiceVersion20100801.PutMetricData',
-        {
-          Namespace: 'SOC/TestAlerts',
-          MetricData: [{
-            MetricName: 'TestAlert',
-            Value: 1,
-            Unit: 'Count',
-            Timestamp: new Date().toISOString()
-          }]
-        },
-        cfg.region, cfg.keyId, cfg.secret
-      );
-      showNotif('success-notif', '✅ Métrique test envoyée', `Métrique publiée sur CloudWatch (SOC/TestAlerts). Configurez un SNS Topic ARN pour recevoir des emails.`);
-    } catch(e) {
-      showNotif('danger-notif', 'Erreur CloudWatch', e.message.slice(0, 150));
-    }
-  }
-
-  // Simulate attack banner for visual test
-  triggerAttackDetection('TEST — Alerte SOC simulée. Vérifiez votre email.');
-  appendSystemLog('🚨 TEST ALERTE envoyée depuis SOC Dashboard', 'error');
-
-  btn.disabled = false;
-  btn.textContent = '🚨 TEST ALERTE';
-}
-
-// ═══════════════════════════════════════════════════════════
-// CHART (Canvas)
-// ═══════════════════════════════════════════════════════════
-
 function drawChart() {
   const canvas = document.getElementById('activityChart');
+  if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  canvas.width = canvas.offsetWidth;
+  canvas.width  = canvas.offsetWidth;
   canvas.height = canvas.offsetHeight;
 
   const w = canvas.width, h = canvas.height;
-  const padding = { top: 10, right: 10, bottom: 25, left: 35 };
-  const iw = w - padding.left - padding.right;
-  const ih = h - padding.top - padding.bottom;
+  const pad = { top: 10, right: 10, bottom: 25, left: 35 };
+  const iw = w - pad.left - pad.right;
+  const ih = h - pad.top  - pad.bottom;
 
   ctx.clearRect(0, 0, w, h);
-
-  if (!chartData.length) return;
+  if (chartData.length < 2) {
+    ctx.fillStyle = 'rgba(74,122,144,0.4)';
+    ctx.font = '11px Share Tech Mono';
+    ctx.textAlign = 'center';
+    ctx.fillText('En attente de données...', w / 2, h / 2);
+    return;
+  }
 
   const maxVal = Math.max(...chartData, 1);
-  const minVal = 0;
 
-  // Grid
+  // Grille
   ctx.strokeStyle = 'rgba(14,58,82,0.5)';
   ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
-    const y = padding.top + ih - (i / 4) * ih;
-    ctx.beginPath();
-    ctx.moveTo(padding.left, y);
-    ctx.lineTo(padding.left + iw, y);
-    ctx.stroke();
-
+    const y = pad.top + ih - (i / 4) * ih;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + iw, y); ctx.stroke();
     ctx.fillStyle = 'rgba(74,122,144,0.7)';
     ctx.font = '9px Share Tech Mono';
     ctx.textAlign = 'right';
-    ctx.fillText(((i / 4) * maxVal).toFixed(0) + '%', padding.left - 4, y + 3);
+    ctx.fillText(((i / 4) * maxVal).toFixed(0) + '%', pad.left - 4, y + 3);
   }
 
   // Gradient fill
-  const grad = ctx.createLinearGradient(0, padding.top, 0, padding.top + ih);
+  const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + ih);
   grad.addColorStop(0, 'rgba(0,212,255,0.3)');
   grad.addColorStop(1, 'rgba(0,212,255,0)');
 
   ctx.beginPath();
   chartData.forEach((v, i) => {
-    const x = padding.left + (i / (chartData.length - 1)) * iw;
-    const y = padding.top + ih - ((v - minVal) / (maxVal - minVal)) * ih;
+    const x = pad.left + (i / (chartData.length - 1)) * iw;
+    const y = pad.top  + ih - (v / maxVal) * ih;
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   });
-  ctx.lineTo(padding.left + iw, padding.top + ih);
-  ctx.lineTo(padding.left, padding.top + ih);
+  ctx.lineTo(pad.left + iw, pad.top + ih);
+  ctx.lineTo(pad.left,       pad.top + ih);
   ctx.closePath();
   ctx.fillStyle = grad;
   ctx.fill();
 
-  // Line
+  // Ligne
   ctx.beginPath();
   ctx.strokeStyle = '#00d4ff';
   ctx.lineWidth = 2;
   ctx.shadowColor = '#00d4ff';
   ctx.shadowBlur = 4;
   chartData.forEach((v, i) => {
-    const x = padding.left + (i / (chartData.length - 1)) * iw;
-    const y = padding.top + ih - ((v - minVal) / (maxVal - minVal)) * ih;
+    const x = pad.left + (i / (chartData.length - 1)) * iw;
+    const y = pad.top  + ih - (v / maxVal) * ih;
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   });
   ctx.stroke();
   ctx.shadowBlur = 0;
 
-  // Labels
+  // Labels X
   ctx.fillStyle = 'rgba(74,122,144,0.7)';
   ctx.font = '8px Share Tech Mono';
   ctx.textAlign = 'center';
   const step = Math.max(1, Math.floor(chartLabels.length / 5));
   chartLabels.forEach((lbl, i) => {
     if (i % step === 0) {
-      const x = padding.left + (i / (chartLabels.length - 1)) * iw;
-      ctx.fillText(lbl, x, padding.top + ih + 15);
+      const x = pad.left + (i / (chartLabels.length - 1)) * iw;
+      ctx.fillText(lbl, x, pad.top + ih + 15);
     }
   });
 }
@@ -1482,18 +1323,17 @@ function drawChart() {
 // ═══════════════════════════════════════════════════════════
 // NOTIFICATIONS
 // ═══════════════════════════════════════════════════════════
-
 let notifTimer;
 function showNotif(cls, title, msg) {
-  const el = document.getElementById('notif');
+  const el      = document.getElementById('notif');
   const titleEl = document.getElementById('notifTitle');
-  const msgEl = document.getElementById('notifMsg');
+  const msgEl   = document.getElementById('notifMsg');
 
-  el.className = 'notif';
+  el.className      = 'notif';
   titleEl.className = 'notif-title';
 
   titleEl.textContent = title;
-  msgEl.textContent = msg;
+  msgEl.textContent   = msg;
 
   el.classList.add(cls);
   titleEl.classList.add(cls);
@@ -1504,42 +1344,27 @@ function showNotif(cls, title, msg) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// CLOCK
+// HORLOGE
 // ═══════════════════════════════════════════════════════════
-
 function updateClock() {
-  const now = new Date();
   document.getElementById('headerTime').textContent =
-    now.toLocaleDateString('fr-FR') + ' · ' + now.toLocaleTimeString('fr-FR');
+    new Date().toLocaleDateString('fr-FR') + ' · ' + new Date().toLocaleTimeString('fr-FR');
 }
-
 setInterval(updateClock, 1000);
 updateClock();
 
 // ═══════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════
-
 window.addEventListener('resize', drawChart);
 
-// Restore non-sensitive config
-try {
-  const saved = JSON.parse(sessionStorage.getItem('soc_cfg') || '{}');
-  if (saved.region) {
-    Object.assign(cfg, saved);
-    document.getElementById('cfgRegion').value = cfg.region;
-    document.getElementById('cfgLogGroup').value = cfg.logGroup;
-    document.getElementById('cfgCluster').value = cfg.cluster;
-    document.getElementById('cfgService').value = cfg.service;
-    document.getElementById('cfgEmail').value = cfg.email;
-    document.getElementById('cfgSNS').value = cfg.sns;
-    document.getElementById('footerRegion').textContent = `Région: ${cfg.region}`;
-    document.getElementById('logGroupLabel').textContent = cfg.logGroup;
-    document.getElementById('clusterInfo').textContent = `AWS · ${cfg.region} · ${cfg.cluster}`;
-  }
-} catch(e) {}
-
-console.log('%c SOC Dashboard initialisé. Entrez vos credentials AWS pour commencer.', 'color: #00d4ff; font-family: monospace; font-size: 14px;');
+// Lancement initial
+document.addEventListener('DOMContentLoaded', () => {
+  setStatus(true, 'CONNEXION...');
+  refreshAll().then(() => {
+    startPolling();
+  });
+});
 </script>
 </body>
 </html>
