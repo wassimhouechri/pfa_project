@@ -6,291 +6,109 @@
   <title>SOC — Security Operations Center</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0f1117;
-      color: #e2e8f0;
-      min-height: 100vh;
-    }
-
-    /* ── Sidebar ── */
-    .sidebar {
-      position: fixed;
-      top: 0; left: 0;
-      width: 220px;
-      height: 100vh;
-      background: #1a1d27;
-      border-right: 1px solid #2d3148;
-      padding: 1.5rem 1rem;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      z-index: 100;
-    }
-    .sidebar-logo {
-      display: flex; align-items: center; gap: 10px;
-      padding: 0 0.5rem 1.5rem;
-      border-bottom: 1px solid #2d3148;
-      margin-bottom: 0.5rem;
-    }
-    .sidebar-logo .logo-icon {
-      width: 36px; height: 36px;
-      background: linear-gradient(135deg, #3b82f6, #6366f1);
-      border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px;
-    }
-    .sidebar-logo .logo-text { font-size: 15px; font-weight: 600; color: #f1f5f9; }
-    .sidebar-logo .logo-sub  { font-size: 11px; color: #64748b; }
-    .nav-item {
-      display: flex; align-items: center; gap: 10px;
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 13px;
-      color: #94a3b8;
-      cursor: pointer;
-      transition: all 0.15s;
-      text-decoration: none;
-    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+    .sidebar { position: fixed; top: 0; left: 0; width: 220px; height: 100vh; background: #1a1d27; border-right: 1px solid #2d3148; padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: 6px; z-index: 100; }
+    .sidebar-logo { display: flex; align-items: center; gap: 10px; padding: 0 0.5rem 1.5rem; border-bottom: 1px solid #2d3148; margin-bottom: 0.5rem; }
+    .logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, #3b82f6, #6366f1); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    .logo-text { font-size: 15px; font-weight: 600; color: #f1f5f9; }
+    .logo-sub  { font-size: 11px; color: #64748b; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; font-size: 13px; color: #94a3b8; cursor: pointer; transition: all 0.15s; text-decoration: none; }
     .nav-item:hover, .nav-item.active { background: #252840; color: #e2e8f0; }
     .nav-item.active { color: #60a5fa; }
-    .nav-section {
-      font-size: 10px; font-weight: 600; color: #475569;
-      text-transform: uppercase; letter-spacing: 0.08em;
-      padding: 12px 12px 4px;
-    }
-    .sidebar-bottom {
-      margin-top: auto;
-      padding-top: 1rem;
-      border-top: 1px solid #2d3148;
-    }
-    .status-badge {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 12px;
-      background: #0d1f0d;
-      border: 1px solid #1a3d1a;
-      border-radius: 8px;
-      font-size: 12px;
-      color: #4ade80;
-    }
-    .dot-pulse {
-      width: 8px; height: 8px;
-      background: #4ade80;
-      border-radius: 50%;
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
-    }
-
-    /* ── Main ── */
+    .nav-section { font-size: 10px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.08em; padding: 12px 12px 4px; }
+    .sidebar-bottom { margin-top: auto; padding-top: 1rem; border-top: 1px solid #2d3148; }
+    .status-badge { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #0d1f0d; border: 1px solid #1a3d1a; border-radius: 8px; font-size: 12px; color: #4ade80; }
+    .dot-pulse { width: 8px; height: 8px; background: #4ade80; border-radius: 50%; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .return-link { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #94a3b8; text-decoration: none; padding: 6px 12px; background: rgba(255,255,255,0.05); border: 1px solid #2d3148; border-radius: 8px; transition: all 0.15s; margin-top: 10px; }
+    .return-link:hover { background: #252840; color: #e2e8f0; }
     .main { margin-left: 220px; padding: 2rem; min-height: 100vh; }
-
-    /* ── Topbar ── */
-    .topbar {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 2rem;
-    }
+    .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; }
     .topbar-title { font-size: 20px; font-weight: 600; color: #f1f5f9; }
     .topbar-sub   { font-size: 13px; color: #64748b; margin-top: 2px; }
     .topbar-actions { display: flex; align-items: center; gap: 10px; }
-    .btn {
-      display: flex; align-items: center; gap: 6px;
-      padding: 7px 14px; border-radius: 8px; font-size: 13px;
-      cursor: pointer; border: 1px solid #2d3148;
-      background: #1a1d27; color: #94a3b8;
-      transition: all 0.15s; text-decoration: none;
-    }
+    .btn { display: flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid #2d3148; background: #1a1d27; color: #94a3b8; transition: all 0.15s; text-decoration: none; }
     .btn:hover { background: #252840; color: #e2e8f0; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary { background: #1d4ed8; border-color: #2563eb; color: #fff; }
     .btn-primary:hover { background: #2563eb; }
     .last-update { font-size: 12px; color: #475569; }
-
-    /* ── Source indicator ── */
-    .source-badge {
-      display: inline-flex; align-items: center; gap: 5px;
-      font-size: 11px; padding: 3px 8px;
-      border-radius: 4px; font-weight: 600;
-      letter-spacing: 0.03em;
-    }
+    .source-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
     .source-live  { background: rgba(34,197,94,0.12);  color: #4ade80;  border: 1px solid rgba(34,197,94,0.25); }
     .source-mock  { background: rgba(245,158,11,0.12); color: #fbbf24;  border: 1px solid rgba(245,158,11,0.25); }
     .source-error { background: rgba(239,68,68,0.12);  color: #f87171;  border: 1px solid rgba(239,68,68,0.25); }
-
-    /* ── Metric cards ── */
     .grid4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 1.5rem; }
-    .grid3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 1.5rem; }
     .grid2 { display: grid; grid-template-columns: repeat(2,1fr); gap: 16px; margin-bottom: 1.5rem; }
-
-    .metric-card {
-      background: #1a1d27; border: 1px solid #2d3148;
-      border-radius: 12px; padding: 1.25rem;
-      position: relative; overflow: hidden;
-    }
-    .metric-card::before {
-      content: ''; position: absolute; top: 0; left: 0; right: 0;
-      height: 3px; border-radius: 12px 12px 0 0;
-    }
-    .metric-card.red::before    { background: #ef4444; }
-    .metric-card.amber::before  { background: #f59e0b; }
-    .metric-card.blue::before   { background: #3b82f6; }
-    .metric-card.green::before  { background: #22c55e; }
-
-    .metric-icon {
-      width: 38px; height: 38px; border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; margin-bottom: 12px;
-    }
-    .metric-icon.red   { background: rgba(239,68,68,0.15);  color: #ef4444; }
-    .metric-icon.amber { background: rgba(245,158,11,0.15); color: #f59e0b; }
-    .metric-icon.blue  { background: rgba(59,130,246,0.15); color: #60a5fa; }
-    .metric-icon.green { background: rgba(34,197,94,0.15);  color: #4ade80; }
-
-    .metric-label { font-size: 12px; color: #64748b; margin-bottom: 4px; }
-    .metric-value { font-size: 28px; font-weight: 700; line-height: 1; }
-    .metric-value.red   { color: #ef4444; }
-    .metric-value.amber { color: #f59e0b; }
-    .metric-value.blue  { color: #60a5fa; }
-    .metric-value.green { color: #4ade80; }
-    .metric-trend { font-size: 11px; color: #475569; margin-top: 6px; }
-
-    /* ── Cards ── */
-    .card {
-      background: #1a1d27; border: 1px solid #2d3148;
-      border-radius: 12px; padding: 1.25rem; margin-bottom: 16px;
-    }
-    .card-header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 1.25rem;
-    }
-    .card-title {
-      font-size: 13px; font-weight: 600; color: #94a3b8;
-      display: flex; align-items: center; gap: 8px;
-    }
-
-    /* ── Logs ── */
-    .log-container {
-      background: #0d0f17; border-radius: 8px; padding: 1rem;
-      font-family: 'Courier New', monospace; font-size: 12px;
-      height: 300px; overflow-y: auto;
-      display: flex; flex-direction: column-reverse;
-    }
-    .log-row {
-      display: flex; gap: 10px; padding: 3px 0;
-      line-height: 1.6; border-bottom: 1px solid rgba(255,255,255,0.03);
-    }
-    .log-time  { color: #475569; min-width: 80px; }
-    .log-level { min-width: 50px; font-weight: 700; }
-    .log-level.ERROR { color: #ef4444; }
-    .log-level.WARN  { color: #f59e0b; }
-    .log-level.INFO  { color: #22c55e; }
-    .log-msg { color: #94a3b8; flex: 1; word-break: break-all; }
-
-    /* ── Loading state ── */
-    .log-loading {
-      display: flex; align-items: center; justify-content: center;
-      height: 100%; color: #475569; font-size: 13px; gap: 8px;
-    }
-    .spinner {
-      width: 16px; height: 16px; border: 2px solid #2d3148;
-      border-top-color: #3b82f6; border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── Error state ── */
-    .log-error {
-      padding: 12px; background: rgba(239,68,68,0.08);
-      border: 1px solid rgba(239,68,68,0.2); border-radius: 8px;
-      color: #f87171; font-size: 12px; margin-bottom: 8px;
-    }
-
-    /* ── Alarms ── */
-    .alarm-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 0; border-bottom: 1px solid #1e2235;
-    }
-    .alarm-row:last-child { border-bottom: none; }
-    .alarm-left { display: flex; align-items: center; gap: 12px; }
-    .alarm-dot  { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-    .alarm-dot.ok    { background: #22c55e; box-shadow: 0 0 6px #22c55e66; }
-    .alarm-dot.alarm { background: #ef4444; box-shadow: 0 0 6px #ef444466; animation: pulse 1s infinite; }
-    .alarm-dot.insufficient { background: #f59e0b; }
-    .alarm-name { font-size: 13px; font-weight: 500; color: #e2e8f0; }
-    .alarm-desc { font-size: 11px; color: #475569; margin-top: 2px; }
-    .alarm-badge { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
-    .alarm-badge.ok           { background: rgba(34,197,94,0.15);  color: #4ade80; }
-    .alarm-badge.alarm        { background: rgba(239,68,68,0.15);  color: #f87171; }
-    .alarm-badge.insufficient { background: rgba(245,158,11,0.15); color: #fbbf24; }
-
-    /* ── Bar chart ── */
-    .bar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-    .bar-label { font-size: 12px; color: #64748b; min-width: 130px; }
-    .bar-track { flex: 1; height: 8px; background: #252840; border-radius: 4px; overflow: hidden; }
-    .bar-fill  { height: 100%; border-radius: 4px; transition: width 0.8s cubic-bezier(.4,0,.2,1); }
-    .bar-value { font-size: 12px; color: #94a3b8; min-width: 40px; text-align: right; }
-
-    /* ── SNS emails ── */
-    .email-row {
-      display: flex; align-items: center; gap: 10px;
-      padding: 10px 12px; background: #252840;
-      border-radius: 8px; font-size: 13px; color: #94a3b8; margin-bottom: 8px;
-    }
-    .email-row:last-child { margin-bottom: 0; }
-
-    /* ── AWS link ── */
-    .aws-link {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-size: 12px; color: #60a5fa; text-decoration: none;
-      padding: 6px 12px;
-      background: rgba(59,130,246,0.1);
-      border: 1px solid rgba(59,130,246,0.2);
-      border-radius: 8px; transition: all 0.15s;
-    }
-    .aws-link:hover { background: rgba(59,130,246,0.2); }
-
-    canvas { width: 100%; }
-
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #2d3148; border-radius: 3px; }
-
-    @media (max-width: 900px) {
-      .sidebar { display: none; }
-      .main { margin-left: 0; padding: 1rem; }
-      .grid4 { grid-template-columns: repeat(2,1fr); }
-      .grid3, .grid2 { grid-template-columns: 1fr; }
-    }
-
-    .return-link {
-      display: inline-flex; align-items: center; gap: 6px;
-      font-size: 12px; color: #94a3b8; text-decoration: none;
-      padding: 6px 12px;
-      background: rgba(255,255,255,0.05); border: 1px solid #2d3148;
-      border-radius: 8px; transition: all 0.15s;
-    }
-    .return-link:hover { background: #252840; color: #e2e8f0; }
-
-    /* ── Log filter bar ── */
-    .log-filters {
-      display: flex; gap: 6px; margin-bottom: 10px;
-    }
-    .filter-btn {
-      padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600;
-      cursor: pointer; border: 1px solid #2d3148;
-      background: #252840; color: #64748b; transition: all 0.15s;
-    }
-    .filter-btn.active-all   { background: #252840; color: #e2e8f0; border-color: #3d4168; }
-    .filter-btn.active-INFO  { background: rgba(34,197,94,0.1);  color: #4ade80;  border-color: rgba(34,197,94,0.3); }
-    .filter-btn.active-WARN  { background: rgba(245,158,11,0.1); color: #fbbf24; border-color: rgba(245,158,11,0.3); }
-    .filter-btn.active-ERROR { background: rgba(239,68,68,0.1);  color: #f87171; border-color: rgba(239,68,68,0.3); }
+    .metric-card { background: #1a1d27; border: 1px solid #2d3148; border-radius: 12px; padding: 1.25rem; position: relative; overflow: hidden; }
+    .metric-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; border-radius:12px 12px 0 0; }
+    .metric-card.red::before   { background:#ef4444; }
+    .metric-card.amber::before { background:#f59e0b; }
+    .metric-card.blue::before  { background:#3b82f6; }
+    .metric-card.green::before { background:#22c55e; }
+    .metric-icon { width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px; margin-bottom:12px; }
+    .metric-icon.red   { background:rgba(239,68,68,0.15); }
+    .metric-icon.amber { background:rgba(245,158,11,0.15); }
+    .metric-icon.blue  { background:rgba(59,130,246,0.15); }
+    .metric-icon.green { background:rgba(34,197,94,0.15); }
+    .metric-label { font-size:12px; color:#64748b; margin-bottom:4px; }
+    .metric-value { font-size:28px; font-weight:700; line-height:1; }
+    .metric-value.red   { color:#ef4444; }
+    .metric-value.amber { color:#f59e0b; }
+    .metric-value.blue  { color:#60a5fa; }
+    .metric-value.green { color:#4ade80; }
+    .metric-trend { font-size:11px; color:#475569; margin-top:6px; }
+    .card { background:#1a1d27; border:1px solid #2d3148; border-radius:12px; padding:1.25rem; margin-bottom:16px; }
+    .card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem; }
+    .card-title { font-size:13px; font-weight:600; color:#94a3b8; display:flex; align-items:center; gap:8px; }
+    .log-container { background:#0d0f17; border-radius:8px; padding:1rem; font-family:'Courier New',monospace; font-size:12px; height:300px; overflow-y:auto; display:flex; flex-direction:column-reverse; }
+    .log-row { display:flex; gap:10px; padding:3px 0; line-height:1.6; border-bottom:1px solid rgba(255,255,255,0.03); }
+    .log-time  { color:#475569; min-width:80px; }
+    .log-level { min-width:50px; font-weight:700; }
+    .log-level.ERROR { color:#ef4444; }
+    .log-level.WARN  { color:#f59e0b; }
+    .log-level.INFO  { color:#22c55e; }
+    .log-msg { color:#94a3b8; flex:1; word-break:break-all; }
+    .log-loading { display:flex; align-items:center; justify-content:center; height:100%; color:#475569; font-size:13px; gap:8px; }
+    .spinner { width:16px; height:16px; border:2px solid #2d3148; border-top-color:#3b82f6; border-radius:50%; animation:spin 0.8s linear infinite; }
+    .log-error { padding:12px; background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2); border-radius:8px; color:#f87171; font-size:12px; margin-bottom:8px; }
+    .session-expired { padding:16px; background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.25); border-radius:8px; color:#fbbf24; font-size:13px; text-align:center; }
+    .alarm-row { display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid #1e2235; }
+    .alarm-row:last-child { border-bottom:none; }
+    .alarm-left { display:flex; align-items:center; gap:12px; }
+    .alarm-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .alarm-dot.ok    { background:#22c55e; box-shadow:0 0 6px #22c55e66; }
+    .alarm-dot.alarm { background:#ef4444; box-shadow:0 0 6px #ef444466; animation:pulse 1s infinite; }
+    .alarm-dot.insufficient { background:#f59e0b; }
+    .alarm-name { font-size:13px; font-weight:500; color:#e2e8f0; }
+    .alarm-desc { font-size:11px; color:#475569; margin-top:2px; }
+    .alarm-badge { font-size:11px; padding:3px 10px; border-radius:20px; font-weight:600; }
+    .alarm-badge.ok           { background:rgba(34,197,94,0.15);  color:#4ade80; }
+    .alarm-badge.alarm        { background:rgba(239,68,68,0.15);  color:#f87171; }
+    .alarm-badge.insufficient { background:rgba(245,158,11,0.15); color:#fbbf24; }
+    .bar-row { display:flex; align-items:center; gap:12px; margin-bottom:12px; }
+    .bar-label { font-size:12px; color:#64748b; min-width:130px; }
+    .bar-track { flex:1; height:8px; background:#252840; border-radius:4px; overflow:hidden; }
+    .bar-fill  { height:100%; border-radius:4px; transition:width 0.8s cubic-bezier(.4,0,.2,1); }
+    .bar-value { font-size:12px; color:#94a3b8; min-width:40px; text-align:right; }
+    .email-row { display:flex; align-items:center; gap:10px; padding:10px 12px; background:#252840; border-radius:8px; font-size:13px; color:#94a3b8; margin-bottom:8px; }
+    .aws-link { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#60a5fa; text-decoration:none; padding:6px 12px; background:rgba(59,130,246,0.1); border:1px solid rgba(59,130,246,0.2); border-radius:8px; transition:all .15s; }
+    .aws-link:hover { background:rgba(59,130,246,0.2); }
+    .log-filters { display:flex; gap:6px; margin-bottom:10px; align-items:center; }
+    .filter-btn { padding:4px 10px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid #2d3148; background:#252840; color:#64748b; transition:all 0.15s; }
+    .filter-btn.active-ALL   { color:#e2e8f0; border-color:#3d4168; }
+    .filter-btn.active-INFO  { background:rgba(34,197,94,0.1);  color:#4ade80;  border-color:rgba(34,197,94,0.3); }
+    .filter-btn.active-WARN  { background:rgba(245,158,11,0.1); color:#fbbf24; border-color:rgba(245,158,11,0.3); }
+    .filter-btn.active-ERROR { background:rgba(239,68,68,0.1);  color:#f87171; border-color:rgba(239,68,68,0.3); }
+    canvas { width:100%; display:block; }
+    ::-webkit-scrollbar { width:6px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:#2d3148; border-radius:3px; }
+    @media(max-width:900px) { .sidebar{display:none;} .main{margin-left:0;padding:1rem;} .grid4{grid-template-columns:repeat(2,1fr);} .grid2{grid-template-columns:1fr;} }
   </style>
 </head>
 <body>
 
-<!-- SIDEBAR -->
 <nav class="sidebar">
   <div class="sidebar-logo">
     <div class="logo-icon">🛡️</div>
@@ -299,49 +117,42 @@
       <div class="logo-sub">PFA DevSecOps</div>
     </div>
   </div>
-
   <div class="nav-section">Monitoring</div>
   <a class="nav-item active">📊 Vue générale</a>
-  <a class="nav-item" onclick="scrollTo(0,400)">📋 Logs ECS</a>
-  <a class="nav-item" onclick="scrollTo(0,800)">🔔 Alarmes</a>
-
-  <div class="nav-section">Infrastructure</div>
-  <a class="nav-item" onclick="scrollTo(0,1200)">🖥️ Ressources</a>
-  <a class="nav-item" onclick="scrollTo(0,1600)">📧 Notifications</a>
-
+  <a class="nav-item" onclick="document.getElementById('logs-section').scrollIntoView({behavior:'smooth'})">📋 Logs ECS</a>
+  <a class="nav-item" onclick="document.getElementById('alarms-section').scrollIntoView({behavior:'smooth'})">🔔 Alarmes</a>
+  <div class="nav-section">AWS</div>
+  <a class="nav-item" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=SOC-Security-Dashboard" target="_blank">📈 CloudWatch</a>
+  <a class="nav-item" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fecs$252Fdevsecops" target="_blank">📋 Logs ECS</a>
+  <a class="nav-item" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#alarmsV2:" target="_blank">🔔 Alarmes</a>
   <div class="sidebar-bottom">
     <div class="status-badge">
       <div class="dot-pulse"></div>
       <div>
         <div style="font-weight:600;">Système actif</div>
-        <div style="font-size:10px; color:#166534; margin-top:1px;">devsecops-cluster</div>
+        <div style="font-size:10px;color:#166534;margin-top:1px;">{{ username }}</div>
       </div>
     </div>
-    <div style="margin-top:10px;">
-      <a href="{{ url_for('dashboard') }}" class="return-link">← Retour au Dashboard</a>
-    </div>
+    <a href="{{ url_for('dashboard') }}" class="return-link">← Retour Dashboard</a>
   </div>
 </nav>
 
-<!-- MAIN CONTENT -->
 <main class="main">
   <div class="topbar">
     <div>
       <div class="topbar-title">Security Operations Center</div>
       <div class="topbar-sub">
-        AWS Academy · us-east-1 · devsecops-cluster
-        &nbsp;·&nbsp;
+        AWS Academy · us-east-1 · devsecops-cluster &nbsp;·&nbsp;
         <span id="data-source-badge" class="source-badge source-mock">⏳ Connexion…</span>
       </div>
     </div>
     <div class="topbar-actions">
       <span class="last-update" id="last-update">Mise à jour: —</span>
       <button class="btn" onclick="refreshAll()">🔄 Rafraîchir</button>
-      <button class="btn btn-primary" onclick="sendTestAlert()">🚨 Test alerte</button>
+      <button class="btn btn-primary" id="test-btn" onclick="sendTestAlert()">🚨 Test alerte</button>
     </div>
   </div>
 
-  <!-- METRIC CARDS -->
   <div class="grid4">
     <div class="metric-card red">
       <div class="metric-icon red">⚠️</div>
@@ -369,20 +180,20 @@
     </div>
   </div>
 
-  <!-- CHART + ALARMS -->
   <div class="grid2">
     <div class="card">
       <div class="card-header">
-        <div class="card-title">📈 Activité sécurité (logs réels)</div>
-        <span style="font-size:11px; color:#475569;" id="chart-info">Temps réel CloudWatch</span>
+        <div class="card-title">📈 Activité sécurité (temps réel)</div>
+        <span style="font-size:11px;color:#475569;">Canvas natif — pas de CDN</span>
       </div>
+      <!-- BUG 1 FIX: canvas natif, zéro dépendance externe -->
       <canvas id="chart" height="160"></canvas>
     </div>
 
-    <div class="card">
+    <div class="card" id="alarms-section">
       <div class="card-header">
         <div class="card-title">🔔 Alarmes CloudWatch</div>
-        <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#alarmsV2:" target="_blank">Voir sur AWS ↗</a>
+        <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#alarmsV2:" target="_blank">Voir AWS ↗</a>
       </div>
       <div id="alarms-container">
         <div class="log-loading"><div class="spinner"></div>Chargement des alarmes…</div>
@@ -390,98 +201,52 @@
     </div>
   </div>
 
-  <!-- LOGS — REAL CLOUDWATCH -->
-  <div class="card">
+  <div class="card" id="logs-section">
     <div class="card-header">
       <div class="card-title">
-        📋 Logs CloudWatch — <code style="font-size:11px; color:#475569;">/ecs/devsecops</code>
+        📋 Logs CloudWatch — <code style="font-size:11px;color:#475569;">/ecs/devsecops</code>
         <span id="logs-source-badge" class="source-badge source-mock" style="margin-left:8px;">⏳</span>
       </div>
-      <div style="display:flex; gap:8px;">
+      <div style="display:flex;gap:8px;">
         <button class="btn" onclick="clearLogs()">🗑️ Vider</button>
         <button class="btn" onclick="fetchLogs()">↻ Recharger</button>
         <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fecs$252Fdevsecops" target="_blank">CloudWatch ↗</a>
       </div>
     </div>
-
-    <!-- Level filters -->
     <div class="log-filters">
-      <button class="filter-btn active-all" id="f-all"   onclick="setFilter('ALL')">Tous</button>
-      <button class="filter-btn" id="f-info"  onclick="setFilter('INFO')">INFO</button>
-      <button class="filter-btn" id="f-warn"  onclick="setFilter('WARN')">WARN</button>
-      <button class="filter-btn" id="f-error" onclick="setFilter('ERROR')">ERROR</button>
-      <span style="margin-left:auto; font-size:11px; color:#475569;" id="log-count"></span>
+      <button class="filter-btn active-ALL" id="f-ALL"   onclick="setFilter('ALL')">Tous</button>
+      <button class="filter-btn" id="f-INFO"  onclick="setFilter('INFO')">INFO</button>
+      <button class="filter-btn" id="f-WARN"  onclick="setFilter('WARN')">WARN</button>
+      <button class="filter-btn" id="f-ERROR" onclick="setFilter('ERROR')">ERROR</button>
+      <span style="margin-left:auto;font-size:11px;color:#475569;" id="log-count"></span>
     </div>
-
     <div class="log-container" id="log-container">
       <div class="log-loading"><div class="spinner"></div>Connexion à CloudWatch…</div>
     </div>
   </div>
 
-  <!-- RESOURCES + NOTIFICATIONS -->
   <div class="grid2">
     <div class="card">
-      <div class="card-header">
-        <div class="card-title">🖥️ Utilisation des ressources</div>
-      </div>
-      <div id="bars-container">
-        <div class="bar-row">
-          <span class="bar-label">CPU devsecops</span>
-          <div class="bar-track"><div class="bar-fill" id="bar-cpu" style="width:0%; background:#3b82f6;"></div></div>
-          <span class="bar-value" id="bv-cpu">—</span>
-        </div>
-        <div class="bar-row">
-          <span class="bar-label">Mémoire devsecops</span>
-          <div class="bar-track"><div class="bar-fill" id="bar-mem" style="width:0%; background:#8b5cf6;"></div></div>
-          <span class="bar-value" id="bv-mem">—</span>
-        </div>
-        <div class="bar-row">
-          <span class="bar-label">Erreurs (1h)</span>
-          <div class="bar-track"><div class="bar-fill" id="bar-err" style="width:0%; background:#ef4444;"></div></div>
-          <span class="bar-value" id="bv-err">—</span>
-        </div>
-        <div class="bar-row">
-          <span class="bar-label">Accès refusés (1h)</span>
-          <div class="bar-track"><div class="bar-fill" id="bar-unauth" style="width:0%; background:#f59e0b;"></div></div>
-          <span class="bar-value" id="bv-unauth">—</span>
-        </div>
-      </div>
+      <div class="card-header"><div class="card-title">🖥️ Ressources ECS</div></div>
+      <div class="bar-row"><span class="bar-label">CPU</span><div class="bar-track"><div class="bar-fill" id="bar-cpu" style="width:0%;background:#3b82f6;"></div></div><span class="bar-value" id="bv-cpu">—</span></div>
+      <div class="bar-row"><span class="bar-label">Mémoire</span><div class="bar-track"><div class="bar-fill" id="bar-mem" style="width:0%;background:#8b5cf6;"></div></div><span class="bar-value" id="bv-mem">—</span></div>
+      <div class="bar-row"><span class="bar-label">Erreurs (1h)</span><div class="bar-track"><div class="bar-fill" id="bar-err" style="width:0%;background:#ef4444;"></div></div><span class="bar-value" id="bv-err">—</span></div>
+      <div class="bar-row"><span class="bar-label">Accès refusés</span><div class="bar-track"><div class="bar-fill" id="bar-unauth" style="width:0%;background:#f59e0b;"></div></div><span class="bar-value" id="bv-unauth">—</span></div>
     </div>
-
     <div class="card">
       <div class="card-header">
-        <div class="card-title">📧 Notifications SNS actives</div>
+        <div class="card-title">📧 Notifications SNS</div>
         <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/sns/v3/home?region=us-east-1#/topics" target="_blank">SNS ↗</a>
       </div>
-      <div style="margin-bottom:1rem;">
-        <div style="font-size:11px; color:#475569; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em;">Topic: soc-alerts</div>
-        <div class="email-row">
-          <span>✉️</span><span>wassimhouiechri902@gmail.com</span>
-          <span style="margin-left:auto; font-size:11px; color:#4ade80;">✓ Confirmé</span>
-        </div>
-        <div class="email-row">
-          <span>✉️</span><span>omarmekki966@gmail.com</span>
-          <span style="margin-left:auto; font-size:11px; color:#4ade80;">✓ Confirmé</span>
-        </div>
-      </div>
-      <div style="font-size:11px; color:#475569; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em;">Commande test rapide</div>
-      <div style="background:#0d0f17; border-radius:8px; padding:12px; font-family:monospace; font-size:11px; color:#64748b; line-height:1.8;">
-        aws sns publish \<br>
-        &nbsp;&nbsp;--topic-arn arn:aws:sns:us-east-1:<br>
-        &nbsp;&nbsp;792782834628:soc-alerts \<br>
-        &nbsp;&nbsp;--subject "🚨 SOC ALERT" \<br>
-        &nbsp;&nbsp;--message "Test" \<br>
-        &nbsp;&nbsp;--region us-east-1
-      </div>
+      <div style="font-size:11px;color:#475569;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">Topic: soc-alerts</div>
+      <div class="email-row">✉️ <span>wassimhouiechri902@gmail.com</span><span style="margin-left:auto;font-size:11px;color:#4ade80;">✓ Confirmé</span></div>
+      <div class="email-row">✉️ <span>omarmekki966@gmail.com</span><span style="margin-left:auto;font-size:11px;color:#4ade80;">✓ Confirmé</span></div>
     </div>
   </div>
 
-  <!-- AWS LINKS -->
   <div class="card">
-    <div class="card-header">
-      <div class="card-title">🔗 Accès directs AWS</div>
-    </div>
-    <div style="display:flex; flex-wrap:wrap; gap:10px;">
+    <div class="card-header"><div class="card-title">🔗 Accès directs AWS</div></div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;">
       <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=SOC-Security-Dashboard" target="_blank">📊 Dashboard CloudWatch</a>
       <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#logsV2:log-groups/log-group/$252Fecs$252Fdevsecops" target="_blank">📋 Logs /ecs/devsecops</a>
       <a class="aws-link" href="https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#alarmsV2:" target="_blank">🔔 Alarmes CloudWatch</a>
@@ -491,177 +256,172 @@
   </div>
 </main>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script>
-// ══════════════════════════════════════════════════════════════
-//  STATE
-// ══════════════════════════════════════════════════════════════
-let allLogs    = [];   // tous les logs récupérés depuis CloudWatch
-let currentFilter = 'ALL';
-let chartObj   = null;
-let chartLabels  = [];
-let chartErrors  = [];
-let chartWarns   = [];
-let awsOk = false;     // true = CloudWatch répond bien
+// ═══════════════════════════════════════════════════
+//  BUG 1 FIX — Chart canvas natif, ZÉRO CDN externe
+// ═══════════════════════════════════════════════════
+const chartLabels = [], chartErrors = [], chartWarns = [];
+let canvasEl, chartCtx;
 
-// ══════════════════════════════════════════════════════════════
-//  UTILS
-// ══════════════════════════════════════════════════════════════
+function drawChart() {
+  if (!chartCtx) return;
+  const w = canvasEl.width, h = canvasEl.height;
+  chartCtx.clearRect(0, 0, w, h);
+  const pad = {t:20, r:20, b:30, l:30};
+  const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+  const n = chartLabels.length;
+  if (n < 2) { chartCtx.fillStyle='#475569'; chartCtx.font='12px sans-serif'; chartCtx.fillText('En attente de données…', w/2-60, h/2); return; }
+
+  // Grid
+  chartCtx.strokeStyle = '#1e2235'; chartCtx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.t + (ch/4)*i;
+    chartCtx.beginPath(); chartCtx.moveTo(pad.l, y); chartCtx.lineTo(pad.l+cw, y); chartCtx.stroke();
+  }
+  // X labels
+  chartCtx.font = '10px monospace'; chartCtx.fillStyle = '#475569';
+  const step = Math.max(1, Math.floor(n/5));
+  for (let i = 0; i < n; i += step) {
+    const x = pad.l + (cw/(n-1))*i;
+    chartCtx.fillText(chartLabels[i], x-12, h-8);
+  }
+  // Errors line
+  chartCtx.strokeStyle = '#ef4444'; chartCtx.lineWidth = 2; chartCtx.beginPath();
+  for (let i = 0; i < n; i++) { const x=pad.l+(cw/(n-1))*i, y=pad.t+ch-(Math.min(chartErrors[i],4)/4)*ch; i===0?chartCtx.moveTo(x,y):chartCtx.lineTo(x,y); } chartCtx.stroke();
+  // Warns line
+  chartCtx.strokeStyle = '#f59e0b'; chartCtx.lineWidth = 2; chartCtx.beginPath();
+  for (let i = 0; i < n; i++) { const x=pad.l+(cw/(n-1))*i, y=pad.t+ch-(Math.min(chartWarns[i],4)/4)*ch; i===0?chartCtx.moveTo(x,y):chartCtx.lineTo(x,y); } chartCtx.stroke();
+  // Legend
+  chartCtx.fillStyle='#ef4444'; chartCtx.fillRect(w-130,8,12,3);
+  chartCtx.fillStyle='#94a3b8'; chartCtx.fillText('Erreurs',w-114,14);
+  chartCtx.fillStyle='#f59e0b'; chartCtx.fillRect(w-66,8,12,3);
+  chartCtx.fillStyle='#94a3b8'; chartCtx.fillText('Warnings',w-50,14);
+}
+
+function pushChart(events) {
+  const t = nowStr().slice(0,5);
+  const errs  = events.filter(e=>e.level==='ERROR').length;
+  const warns = events.filter(e=>e.level==='WARN').length;
+  chartLabels.push(t); chartErrors.push(errs); chartWarns.push(warns);
+  if (chartLabels.length > 15) { chartLabels.shift(); chartErrors.shift(); chartWarns.shift(); }
+  drawChart();
+}
+
+// ═══════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════
+let allLogs = [], currentFilter = 'ALL';
+
 function nowStr() {
   const d = new Date();
-  return d.getHours().toString().padStart(2,'0') + ':' +
-         d.getMinutes().toString().padStart(2,'0') + ':' +
-         d.getSeconds().toString().padStart(2,'0');
+  return d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0')+':'+d.getSeconds().toString().padStart(2,'0');
 }
 
-function setSourceBadge(ok, message) {
-  const badge = document.getElementById('data-source-badge');
-  const logBadge = document.getElementById('logs-source-badge');
-  awsOk = ok;
+function setSourceBadge(ok, msg) {
+  const b = document.getElementById('data-source-badge');
+  const lb = document.getElementById('logs-source-badge');
   if (ok) {
-    badge.className = 'source-badge source-live';
-    badge.textContent = '🟢 Live CloudWatch';
-    logBadge.className = 'source-badge source-live';
-    logBadge.textContent = '🟢 Live';
+    b.className='source-badge source-live'; b.textContent='🟢 Live CloudWatch';
+    lb.className='source-badge source-live'; lb.textContent='🟢 Live';
   } else {
-    badge.className = 'source-badge source-error';
-    badge.textContent = '🔴 ' + (message || 'Erreur AWS');
-    logBadge.className = 'source-badge source-error';
-    logBadge.textContent = '🔴 Erreur';
+    b.className='source-badge source-error'; b.textContent='🔴 '+(msg||'Erreur');
+    lb.className='source-badge source-error'; lb.textContent='🔴 Erreur';
   }
 }
 
-// ══════════════════════════════════════════════════════════════
-//  CHART INIT
-// ══════════════════════════════════════════════════════════════
-function initChart() {
-  const ctx = document.getElementById('chart').getContext('2d');
-  chartObj = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: chartLabels,
-      datasets: [
-        {
-          label: 'Erreurs',
-          data: chartErrors,
-          borderColor: '#ef4444',
-          backgroundColor: 'rgba(239,68,68,0.08)',
-          tension: 0.4, fill: true, pointRadius: 3,
-        },
-        {
-          label: 'Warnings',
-          data: chartWarns,
-          borderColor: '#f59e0b',
-          backgroundColor: 'rgba(245,158,11,0.06)',
-          tension: 0.4, fill: true, pointRadius: 3,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      animation: { duration: 600 },
-      plugins: {
-        legend: { labels: { color: '#64748b', font: { size: 11 } } },
-      },
-      scales: {
-        x: { ticks: { color: '#475569', font: { size: 10 } }, grid: { color: '#1e2235' } },
-        y: { ticks: { color: '#475569', font: { size: 10 } }, grid: { color: '#1e2235' }, beginAtZero: true },
-      },
-    },
+// ═══════════════════════════════════════════════════
+//  BUG 2 FIX — safeJson : détecte session expirée
+//  Si le serveur redirige vers /login (HTML, pas JSON),
+//  res.json() planterait. On vérifie content-type d'abord.
+// ═══════════════════════════════════════════════════
+async function safeJson(url, options) {
+  const res = await fetch(url, options);
+  const ct = res.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) {
+    // Session expirée → Flask a renvoyé un redirect HTML vers /login
+    if (res.status === 401 || res.redirected || res.url.includes('/login')) {
+      showSessionExpired();
+    }
+    return null;  // signale l'échec sans planter
+  }
+  return res.json();
+}
+
+function showSessionExpired() {
+  document.querySelectorAll('.log-container, #alarms-container').forEach(el => {
+    el.innerHTML = `<div class="session-expired">
+      ⏰ Session expirée — <a href="/login" style="color:#fbbf24;">Reconnectez-vous</a>
+    </div>`;
   });
+  setSourceBadge(false, 'Session expirée');
 }
 
-// Push a new point into the chart (built from current log batch)
-function updateChart(events) {
-  const label = nowStr();
-  const errors = events.filter(e => e.level === 'ERROR').length;
-  const warns  = events.filter(e => e.level === 'WARN').length;
-
-  chartLabels.push(label);
-  chartErrors.push(errors);
-  chartWarns.push(warns);
-
-  // Keep last 12 points
-  if (chartLabels.length > 12) {
-    chartLabels.shift(); chartErrors.shift(); chartWarns.shift();
-  }
-  chartObj.update();
-}
-
-// ══════════════════════════════════════════════════════════════
-//  RENDER LOGS
-// ══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
+//  LOGS RENDER
+// ═══════════════════════════════════════════════════
 function renderLogs() {
   const container = document.getElementById('log-container');
-  const filtered = currentFilter === 'ALL'
-    ? allLogs
-    : allLogs.filter(e => e.level === currentFilter);
-
-  document.getElementById('log-count').textContent =
-    filtered.length + ' évènement' + (filtered.length !== 1 ? 's' : '');
-
+  const filtered = currentFilter === 'ALL' ? allLogs : allLogs.filter(e=>e.level===currentFilter);
+  document.getElementById('log-count').textContent = filtered.length + ' événement' + (filtered.length!==1?'s':'');
   if (filtered.length === 0) {
-    container.innerHTML = '<div style="color:#475569; padding:20px; text-align:center; font-size:13px;">Aucun log pour ce filtre</div>';
+    container.innerHTML = '<div style="color:#475569;padding:20px;text-align:center;font-size:13px;">Aucun log pour ce filtre</div>';
     return;
   }
-
   container.innerHTML = '';
-  // Render newest first (prepend = latest at top since flex-direction:column-reverse)
   filtered.forEach(e => {
-    const row = document.createElement('div');
-    row.className = 'log-row';
-    const safeMsg = e.msg.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    row.innerHTML =
-      `<span class="log-time">${e.time}</span>` +
-      `<span class="log-level ${e.level}">${e.level}</span>` +
-      `<span class="log-msg">${safeMsg}</span>`;
+    const row = document.createElement('div'); row.className = 'log-row';
+    const safeMsg = e.msg.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    row.innerHTML = `<span class="log-time">${e.time}</span><span class="log-level ${e.level}">${e.level}</span><span class="log-msg">${safeMsg}</span>`;
     container.appendChild(row);
   });
 }
 
 function setFilter(level) {
   currentFilter = level;
-  ['all','info','warn','error'].forEach(k => {
-    const btn = document.getElementById('f-' + k);
-    btn.className = 'filter-btn';
-  });
-  const map = { 'ALL': 'all', 'INFO': 'info', 'WARN': 'warn', 'ERROR': 'error' };
-  document.getElementById('f-' + map[level]).className = 'filter-btn active-' + level;
+  ['ALL','INFO','WARN','ERROR'].forEach(k => { document.getElementById('f-'+k).className='filter-btn'; });
+  document.getElementById('f-'+level).className='filter-btn active-'+level;
   renderLogs();
 }
 
-function clearLogs() {
-  allLogs = [];
-  renderLogs();
-}
+function clearLogs() { allLogs=[]; renderLogs(); }
 
-// ══════════════════════════════════════════════════════════════
-//  API CALLS — REAL CloudWatch via Flask backend
-// ══════════════════════════════════════════════════════════════
-
+// ═══════════════════════════════════════════════════
+//  API CALLS
+// ═══════════════════════════════════════════════════
 async function fetchLogs() {
   const container = document.getElementById('log-container');
   try {
-    const res  = await fetch('/api/soc/logs');
-    const data = await res.json();
+    const data = await safeJson('/api/soc/logs');
+    if (!data) return;
 
     if (!data.ok) {
-      // Show error inline but keep previous logs if any
-      setSourceBadge(false, data.error || 'Erreur API');
-      if (allLogs.length === 0) {
-        container.innerHTML = `<div class="log-error">
-          ⚠️ Impossible de charger les logs CloudWatch :<br>
-          <code style="font-size:10px; opacity:.7;">${data.error}</code><br><br>
-          <span style="color:#475569;">Vérifiez que le IAM Role ECS a la permission <strong>logs:FilterLogEvents</strong></span>
+      setSourceBadge(false, data.error);
+      // BUG 3 FIX — log group vide = pas une erreur, juste "aucun log encore"
+      if (data.error && data.error.includes('ResourceNotFoundException')) {
+        container.innerHTML = `<div style="color:#475569;padding:20px;text-align:center;font-size:13px;">
+          📭 Le log group <code>/ecs/devsecops</code> n'a pas encore de streams.<br>
+          <span style="font-size:11px;margin-top:6px;display:block;">L'app doit avoir tourné au moins une fois pour générer des logs.</span>
         </div>`;
+      } else if (allLogs.length === 0) {
+        container.innerHTML = `<div class="log-error">⚠️ CloudWatch : ${data.error}<br><span style="font-size:10px;opacity:.7;">Vérifiez que le IAM Role ECS a la permission logs:FilterLogEvents</span></div>`;
       }
       return;
     }
 
     setSourceBadge(true);
-    allLogs = data.events;          // replace with fresh batch
+
+    // BUG 3 FIX — events vide = log group existe mais aucun log dans la fenêtre 1h
+    if (data.events.length === 0 && allLogs.length === 0) {
+      container.innerHTML = `<div style="color:#475569;padding:20px;text-align:center;font-size:13px;">
+        📭 Aucun log dans le dernier 1h.<br>
+        <span style="font-size:11px;margin-top:6px;display:block;">Le groupe existe, en attente d'activité.</span>
+      </div>`;
+      return;
+    }
+
+    allLogs = data.events;
     renderLogs();
-    updateChart(data.events);
+    pushChart(data.events);
 
   } catch (err) {
     setSourceBadge(false, 'Réseau');
@@ -673,136 +433,80 @@ async function fetchLogs() {
 
 async function fetchMetrics() {
   try {
-    const res  = await fetch('/api/soc/metrics');
-    const data = await res.json();
+    const data = await safeJson('/api/soc/metrics');
+    if (!data || !data.ok) return;
 
-    if (!data.ok) {
-      // Metrics failed — mark with dashes
-      ['m-cpu','m-mem','m-errors','m-unauth'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el && el.textContent === '—') el.textContent = 'N/A';
-      });
-      return;
-    }
+    const set = (id, val, unit='%') => {
+      document.getElementById(id).textContent = val + unit;
+    };
+    set('m-cpu', data.cpu); set('m-mem', data.mem);
+    document.getElementById('m-errors').textContent = data.errors;
+    document.getElementById('m-unauth').textContent = data.unauth;
+    document.getElementById('t-errors').textContent = data.errors>0 ? '⚠️ '+data.errors+' erreur(s)' : '✅ Aucune erreur';
+    document.getElementById('t-unauth').textContent = data.unauth>0 ? '⚠️ '+data.unauth+' accès refusé(s)' : '✅ Aucun accès refusé';
 
-    // CPU
-    const cpu = data.cpu;
-    document.getElementById('m-cpu').textContent   = cpu + '%';
-    document.getElementById('bar-cpu').style.width = Math.min(cpu, 100) + '%';
-    document.getElementById('bv-cpu').textContent  = cpu + '%';
+    const setBar = (id, bvId, val, max=100) => {
+      document.getElementById(id).style.width = Math.min(val,max)/max*100+'%';
+      document.getElementById(bvId).textContent = val+(id.includes('cpu')||id.includes('mem')?'%':'');
+    };
+    setBar('bar-cpu','bv-cpu',data.cpu); setBar('bar-mem','bv-mem',data.mem);
+    setBar('bar-err','bv-err',data.errors,20); setBar('bar-unauth','bv-unauth',data.unauth,20);
 
-    // MEM
-    const mem = data.mem;
-    document.getElementById('m-mem').textContent   = mem + '%';
-    document.getElementById('bar-mem').style.width = Math.min(mem, 100) + '%';
-    document.getElementById('bv-mem').textContent  = mem + '%';
-
-    // Errors
-    const err = data.errors;
-    document.getElementById('m-errors').textContent = err;
-    document.getElementById('t-errors').textContent = err > 0
-      ? '⚠️ ' + err + ' erreur(s) détectée(s)'
-      : '✅ Aucune erreur';
-    document.getElementById('bar-err').style.width  = Math.min(err * 10, 100) + '%';
-    document.getElementById('bv-err').textContent   = err;
-
-    // Unauth
-    const unauth = data.unauth;
-    document.getElementById('m-unauth').textContent  = unauth;
-    document.getElementById('t-unauth').textContent  = unauth > 0
-      ? '⚠️ ' + unauth + ' accès refusé(s)'
-      : '✅ Aucun accès refusé';
-    document.getElementById('bar-unauth').style.width = Math.min(unauth * 10, 100) + '%';
-    document.getElementById('bv-unauth').textContent  = unauth;
-
-  } catch (err) {
-    console.warn('fetchMetrics error:', err);
-  }
+  } catch(err) { console.warn('fetchMetrics:', err); }
 }
 
 async function fetchAlarms() {
   const container = document.getElementById('alarms-container');
   try {
-    const res  = await fetch('/api/soc/alarms');
-    const data = await res.json();
-
-    if (!data.ok) {
-      container.innerHTML = `<div class="log-error">⚠️ ${data.error}</div>`;
-      return;
-    }
-
-    if (data.alarms.length === 0) {
-      container.innerHTML = '<div style="color:#475569; font-size:13px; padding:12px 0;">Aucune alarme configurée</div>';
-      return;
-    }
+    const data = await safeJson('/api/soc/alarms');
+    if (!data) return;
+    if (!data.ok) { container.innerHTML=`<div class="log-error">⚠️ ${data.error}</div>`; return; }
+    if (!data.alarms.length) { container.innerHTML='<div style="color:#475569;font-size:13px;padding:12px 0;">Aucune alarme configurée</div>'; return; }
 
     container.innerHTML = '';
     data.alarms.forEach(alarm => {
-      const state = alarm.state.toLowerCase(); // ok | alarm | insufficient_data
-      const cssState = state === 'ok' ? 'ok' : state === 'alarm' ? 'alarm' : 'insufficient';
-      const label = state === 'ok' ? 'OK' : state === 'alarm' ? 'ALARM' : 'INSUFF.';
-
-      const row = document.createElement('div');
-      row.className = 'alarm-row';
-      row.innerHTML = `
-        <div class="alarm-left">
-          <div class="alarm-dot ${cssState}"></div>
-          <div>
-            <div class="alarm-name">${alarm.name}</div>
-            <div class="alarm-desc">${alarm.desc || alarm.reason || ''}</div>
-          </div>
-        </div>
-        <span class="alarm-badge ${cssState}">${label}</span>
-      `;
+      const state = alarm.state.toLowerCase();
+      const css   = state==='ok'?'ok':state==='alarm'?'alarm':'insufficient';
+      const label = state==='ok'?'OK':state==='alarm'?'ALARM':'INSUFF.';
+      const row = document.createElement('div'); row.className='alarm-row';
+      row.innerHTML=`<div class="alarm-left"><div class="alarm-dot ${css}"></div><div><div class="alarm-name">${alarm.name}</div><div class="alarm-desc">${alarm.desc||alarm.reason||''}</div></div></div><span class="alarm-badge ${css}">${label}</span>`;
       container.appendChild(row);
     });
-
-  } catch (err) {
-    container.innerHTML = `<div class="log-error">⚠️ Erreur réseau : ${err.message}</div>`;
-  }
+  } catch(err) { container.innerHTML=`<div class="log-error">⚠️ Réseau : ${err.message}</div>`; }
 }
 
 async function sendTestAlert() {
-  const btn = document.querySelector('.btn-primary');
-  btn.disabled = true;
-  btn.textContent = '⏳ Envoi…';
+  const btn = document.getElementById('test-btn');
+  btn.disabled=true; btn.textContent='⏳ Envoi…';
   try {
-    const res  = await fetch('/api/soc/test-alert', { method: 'POST' });
-    const data = await res.json();
-    if (data.ok) {
-      btn.textContent = '✅ Alerte envoyée !';
-      setTimeout(() => { btn.textContent = '🚨 Test alerte'; btn.disabled = false; }, 3000);
-    } else {
-      btn.textContent = '❌ Erreur: ' + (data.error || '');
-      setTimeout(() => { btn.textContent = '🚨 Test alerte'; btn.disabled = false; }, 4000);
-    }
-  } catch (err) {
-    btn.textContent = '❌ Réseau';
-    setTimeout(() => { btn.textContent = '🚨 Test alerte'; btn.disabled = false; }, 3000);
-  }
+    const data = await safeJson('/api/soc/test-alert', {method:'POST'});
+    if (!data) { btn.textContent='❌ Session expirée'; }
+    else if (data.ok) { btn.textContent='✅ Alerte envoyée !'; }
+    else { btn.textContent='❌ '+data.error; }
+  } catch(e) { btn.textContent='❌ Réseau'; }
+  setTimeout(()=>{ btn.textContent='🚨 Test alerte'; btn.disabled=false; }, 3500);
 }
 
-// ══════════════════════════════════════════════════════════════
-//  REFRESH ALL
-// ══════════════════════════════════════════════════════════════
 async function refreshAll() {
-  document.getElementById('last-update').textContent = 'Mise à jour: ' + nowStr();
+  document.getElementById('last-update').textContent='Mise à jour: '+nowStr();
   await Promise.all([fetchLogs(), fetchMetrics(), fetchAlarms()]);
 }
 
-// ══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 //  INIT
-// ══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
-  initChart();
+  canvasEl  = document.getElementById('chart');
+  chartCtx  = canvasEl.getContext('2d');
+  canvasEl.width  = canvasEl.parentElement.clientWidth - 40 || 500;
+  canvasEl.height = 160;
+  drawChart();
+
   refreshAll();
 
-  // Auto-refresh toutes les 30 secondes (logs CloudWatch)
-  setInterval(fetchLogs,    30_000);
-  // Métriques toutes les 60 secondes (CloudWatch a un délai de ~1 min)
-  setInterval(fetchMetrics, 60_000);
-  // Alarmes toutes les 60 secondes
-  setInterval(fetchAlarms,  60_000);
+  setInterval(fetchLogs,    30_000);   // logs toutes les 30s
+  setInterval(fetchMetrics, 60_000);   // métriques toutes les 60s
+  setInterval(fetchAlarms,  60_000);   // alarmes toutes les 60s
 });
 </script>
 </body>

@@ -14,6 +14,8 @@ from datetime import datetime, timezone, timedelta
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-in-prod")
+app.config["PERMANENT_SESSION_LIFETIME"] = 86400   # 24h — évite les expirations trop rapides
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 # ── Config AWS ───────────────────────────────────────
 AWS_REGION      = os.environ.get("AWS_REGION", "us-east-1")
@@ -39,6 +41,10 @@ def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if "username" not in session:
+            # API routes: retourner JSON 401 (pas redirect HTML qui casse res.json())
+            if request.path.startswith("/api/"):
+                from flask import jsonify as _j
+                return _j({"ok": False, "error": "session_expired"}), 401
             return redirect(url_for("login"))
         return f(*args, **kwargs)
     return decorated
@@ -63,6 +69,7 @@ def login():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         if username in USERS and check_password_hash(USERS[username], password):
+            session.permanent = True
             session["username"] = username
             return redirect(url_for("dashboard"))
         error = "Nom d'utilisateur ou mot de passe incorrect."
