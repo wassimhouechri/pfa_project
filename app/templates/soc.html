@@ -1497,6 +1497,53 @@ async function sendTestAlert() {
 // ═══════════════════════════════════════════════════════════
 // REFRESH ALL
 // ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// FETCH ATTACK STATS  →  GET /api/soc/attack-stats
+// Route Flask directe — pas besoin de CloudWatch
+// ═══════════════════════════════════════════════════════════
+async function fetchAttackStats() {
+  try {
+    const res  = await apiFetch('/api/soc/attack-stats');
+    const data = await res.json();
+    if (!data.ok) return;
+
+    const bruteList = data.brute_force || [];
+
+    bruteList.forEach(entry => {
+      // Construire un faux "event" pour le moteur d'analyse
+      const fakeEvents = [];
+      for (let i = 0; i < entry.count; i++) {
+        fakeEvents.push({ msg: `unauthorized ip=${entry.ip} status=401`, level: 'WARN', time: entry.last_seen });
+      }
+
+      const counts = {
+        unauth: entry.count,
+        errors: 0,
+        requests: 0,
+        totalErrors: 0
+      };
+
+      // Forcer la détection Brute Force
+      const detected = {
+        name: 'Brute Force / Credential Stuffing',
+        icon: '🔐',
+        severity: 'critical',
+        confidence: 95,
+        description: `${entry.count} tentatives échouées depuis ${entry.ip}. Dernière: ${entry.last_seen}`,
+        recommendation: 'Bloquer l\'IP source, activer MFA, renforcer le rate limiting.'
+      };
+
+      updateAttackIntelPanel(detected, new Date());
+      appendSystemLog(`🚨 [ATTACK STATS] Brute Force détecté — IP: ${entry.ip} — ${entry.count} tentatives`, 'ERROR');
+    });
+
+  } catch(e) {
+    if (e.message !== 'session_expired') {
+      console.warn('fetchAttackStats error:', e.message);
+    }
+  }
+}
+
 async function refreshAll() {
   const btn = document.getElementById('refreshBtn');
   btn.disabled = true;
@@ -1505,7 +1552,7 @@ async function refreshAll() {
   document.getElementById('pollStatus').textContent = 'Rafraîchissement...';
 
   try {
-    await Promise.all([fetchLogs(), fetchMetrics(), fetchAlarms()]);
+    await Promise.all([fetchLogs(), fetchMetrics(), fetchAlarms(), fetchAttackStats()]);
     const ts = new Date().toLocaleTimeString('fr-FR');
     document.getElementById('footerRefresh').textContent = `Dernière mise à jour: ${ts}`;
     document.getElementById('pollStatus').textContent = 'Données à jour ✓';
@@ -1533,6 +1580,9 @@ function startPolling() {
 
   // Alarmes : toutes les 30s
   alarmsTimer = setInterval(fetchAlarms, POLL_ALARMS);
+
+  // Attack stats Flask : toutes les 10s (même fréquence que les logs)
+  setInterval(fetchAttackStats, POLL_LOGS);
 
   // Countdown visuel basé sur le cycle le plus court (logs 10s)
   nextRefreshAt = Date.now() + POLL_LOGS;
