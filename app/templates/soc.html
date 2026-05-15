@@ -61,7 +61,7 @@
     .card { background:#1a1d27; border:1px solid #2d3148; border-radius:12px; padding:1.25rem; margin-bottom:16px; }
     .card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem; }
     .card-title { font-size:13px; font-weight:600; color:#94a3b8; display:flex; align-items:center; gap:8px; }
-    .log-container { background:#0d0f17; border-radius:8px; padding:1rem; font-family:'Courier New',monospace; font-size:12px; height:300px; overflow-y:auto; display:flex; flex-direction:column-reverse; }
+    .log-container { background:#0d0f17; border-radius:8px; padding:1rem; font-family:'Courier New',monospace; font-size:12px; height:340px; overflow-y:auto; display:flex; flex-direction:column; scroll-behavior:smooth; }
     .log-row { display:flex; gap:10px; padding:3px 0; line-height:1.6; border-bottom:1px solid rgba(255,255,255,0.03); }
     .log-time  { color:#475569; min-width:80px; }
     .log-level { min-width:50px; font-weight:700; }
@@ -367,6 +367,8 @@ function renderLogs() {
     container.innerHTML = '<div style="color:#475569;padding:20px;text-align:center;font-size:13px;">Aucun log pour ce filtre</div>';
     return;
   }
+  // Vérifier si l'utilisateur est déjà tout en bas (pour ne pas forcer le scroll s'il remonte)
+  const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
   container.innerHTML = '';
   filtered.forEach(e => {
     const row = document.createElement('div'); row.className = 'log-row';
@@ -374,6 +376,8 @@ function renderLogs() {
     row.innerHTML = `<span class="log-time">${e.time}</span><span class="log-level ${e.level}">${e.level}</span><span class="log-msg">${safeMsg}</span>`;
     container.appendChild(row);
   });
+  // Auto-scroll vers le bas uniquement si on était déjà en bas
+  if (atBottom) container.scrollTop = container.scrollHeight;
 }
 
 function setFilter(level) {
@@ -410,18 +414,24 @@ async function fetchLogs() {
 
     setSourceBadge(true);
 
-    // BUG 3 FIX — events vide = log group existe mais aucun log dans la fenêtre 1h
-    if (data.events.length === 0 && allLogs.length === 0) {
+    // BUG 4 FIX — fusionner les nouveaux logs sans écraser (dedup par id)
+    if (data.events.length > 0) {
+      const existingIds = new Set(allLogs.map(e => e.id));
+      const newEvents = data.events.filter(e => !existingIds.has(e.id));
+      if (newEvents.length > 0) {
+        allLogs = [...allLogs, ...newEvents];
+        // Garder les 200 derniers max
+        if (allLogs.length > 200) allLogs = allLogs.slice(-200);
+        renderLogs();
+        pushChart(newEvents);
+      }
+    } else if (allLogs.length === 0) {
       container.innerHTML = `<div style="color:#475569;padding:20px;text-align:center;font-size:13px;">
-        📭 Aucun log dans le dernier 1h.<br>
+        📭 Aucun log dans les 3 dernières heures.<br>
         <span style="font-size:11px;margin-top:6px;display:block;">Le groupe existe, en attente d'activité.</span>
       </div>`;
-      return;
     }
-
-    allLogs = data.events;
-    renderLogs();
-    pushChart(data.events);
+    // Si allLogs.length > 0 et data.events vide → on garde ce qu'on a affiché
 
   } catch (err) {
     setSourceBadge(false, 'Réseau');
@@ -502,7 +512,11 @@ document.addEventListener('DOMContentLoaded', () => {
   canvasEl.height = 160;
   drawChart();
 
-  refreshAll();
+  refreshAll().then(() => {
+    // Scroll initial vers le bas après le premier chargement
+    const container = document.getElementById('log-container');
+    container.scrollTop = container.scrollHeight;
+  });
 
   setInterval(fetchLogs,    30_000);   // logs toutes les 30s
   setInterval(fetchMetrics, 60_000);   // métriques toutes les 60s

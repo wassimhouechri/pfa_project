@@ -134,15 +134,16 @@ def soc_logs():
     """
     try:
         logs = _aws("logs")
-        # Fenêtre : dernière heure
-        start_ms = int((datetime.now(timezone.utc) - timedelta(hours=1)).timestamp() * 1000)
+        # Fenêtre : 3 dernières heures (1h trop court si le container démarre)
+        start_ms = int((datetime.now(timezone.utc) - timedelta(hours=3)).timestamp() * 1000)
         resp = logs.filter_log_events(
             logGroupName=LOG_GROUP,
             startTime=start_ms,
-            limit=30,
+            limit=50,
         )
+        raw_events = sorted(resp.get("events", []), key=lambda e: e["timestamp"])
         events = []
-        for e in resp.get("events", []):
+        for e in raw_events:
             msg = e.get("message", "").strip()
             # Détection du niveau depuis le message brut
             if "ERROR" in msg or "error" in msg or "Exception" in msg:
@@ -154,7 +155,7 @@ def soc_logs():
             ts = datetime.fromtimestamp(
                 e["timestamp"] / 1000, tz=timezone.utc
             ).strftime("%H:%M:%S")
-            events.append({"time": ts, "level": level, "msg": msg[:200]})
+            events.append({"time": ts, "level": level, "msg": msg[:200], "id": e["eventId"]})
         return jsonify({"ok": True, "events": events})
     except NoCredentialsError:
         return jsonify({"ok": False, "error": "Pas de credentials AWS (IAM Role manquant)"}), 403
