@@ -1501,6 +1501,10 @@ async function sendTestAlert() {
 // FETCH ATTACK STATS  →  GET /api/soc/attack-stats
 // Route Flask directe — pas besoin de CloudWatch
 // ═══════════════════════════════════════════════════════════
+
+// Garde en mémoire les clés déjà vues pour éviter le spam
+const _seenBruteKeys = {};
+
 async function fetchAttackStats() {
   try {
     const res  = await apiFetch('/api/soc/attack-stats');
@@ -1508,40 +1512,64 @@ async function fetchAttackStats() {
     if (!data.ok) return;
 
     const bruteList = data.brute_force || [];
+    if (bruteList.length === 0) return;
 
-    bruteList.forEach(entry => {
-      // Construire un faux "event" pour le moteur d'analyse
-      const fakeEvents = [];
-      for (let i = 0; i < entry.count; i++) {
-        fakeEvents.push({ msg: `unauthorized ip=${entry.ip} status=401`, level: 'WARN', time: entry.last_seen });
-      }
+    // Prendre l'IP avec le plus de tentatives
+    const worst = bruteList.reduce((a, b) => a.count > b.count ? a : b);
 
-      const counts = {
-        unauth: entry.count,
-        errors: 0,
-        requests: 0,
-        totalErrors: 0
-      };
+    const detected = {
+      name: 'Brute Force / Credential Stuffing',
+      icon: '🔐',
+      severity: 'critical',
+      confidence: 95,
+      description: `${worst.count} tentatives échouées depuis IP ${worst.ip}. Première: ${worst.first_seen} — Dernière: ${worst.last_seen}`,
+      recommendation: 'Bloquer l\'IP source, activer MFA, renforcer le rate limiting.'
+    };
 
-      // Forcer la détection Brute Force
-      const detected = {
-        name: 'Brute Force / Credential Stuffing',
-        icon: '🔐',
-        severity: 'critical',
-        confidence: 95,
-        description: `${entry.count} tentatives échouées depuis ${entry.ip}. Dernière: ${entry.last_seen}`,
-        recommendation: 'Bloquer l\'IP source, activer MFA, renforcer le rate limiting.'
-      };
+    // Toujours mettre à jour le panneau TYPE D'ATTAQUE
+    _forceUpdateAttackPanel(detected);
 
-      updateAttackIntelPanel(detected, new Date());
-      appendSystemLog(`🚨 [ATTACK STATS] Brute Force détecté — IP: ${entry.ip} — ${entry.count} tentatives`, 'ERROR');
-    });
+    // Ajouter à l'historique UNE SEULE FOIS par tranche de 5 nouvelles tentatives
+    const key = `${worst.ip}-${Math.floor(worst.count / 5)}`;
+    if (!_seenBruteKeys[key]) {
+      _seenBruteKeys[key] = true;
+      addToAttackHistory(detected, new Date());
+      appendSystemLog(`🚨 [BRUTE FORCE] IP: ${worst.ip} — ${worst.count} tentatives détectées`, 'ERROR');
+      autoSendAttackAlert(detected);
+    }
 
   } catch(e) {
     if (e.message !== 'session_expired') {
       console.warn('fetchAttackStats error:', e.message);
     }
   }
+}
+
+// Met à jour UNIQUEMENT le panneau Type d'Attaque (sans toucher l'historique)
+function _forceUpdateAttackPanel(detected) {
+  const panel    = document.getElementById('attackIntelPanel');
+  const badge    = document.getElementById('attackTypeBadge');
+  const desc     = document.getElementById('attackTypeDesc');
+  const sevFill  = document.getElementById('severityFill');
+  const sevVal   = document.getElementById('severityVal');
+  const confFill = document.getElementById('confidenceFill');
+  const confVal  = document.getElementById('confidenceVal');
+
+  panel.classList.add('has-attack');
+  badge.className   = 'attack-type-badge active';
+  badge.textContent = `${detected.icon} ${detected.name}`;
+  desc.textContent  = detected.description;
+
+  sevFill.className  = 'severity-fill critical';
+  sevVal.className   = 'severity-val critical';
+  sevVal.textContent = 'CRITIQUE';
+
+  confFill.style.width      = '95%';
+  confFill.style.background = 'var(--danger)';
+  confVal.textContent       = '95%';
+  confVal.style.color       = 'var(--danger)';
+
+  currentAttack = detected;
 }
 
 async function refreshAll() {
