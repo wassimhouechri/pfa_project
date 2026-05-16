@@ -1499,11 +1499,12 @@ async function sendTestAlert() {
 // ═══════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════
 // FETCH ATTACK STATS  →  GET /api/soc/attack-stats
-// Route Flask directe — pas besoin de CloudWatch
+// Route Flask directe — retourne tous les types d'attaques
 // ═══════════════════════════════════════════════════════════
 
 // Garde en mémoire les clés déjà vues pour éviter le spam
 const _seenBruteKeys = {};
+const _seenAttackKeys = {};
 
 async function fetchAttackStats() {
   try {
@@ -1511,31 +1512,100 @@ async function fetchAttackStats() {
     const data = await res.json();
     if (!data.ok) return;
 
-    const bruteList = data.brute_force || [];
-    if (bruteList.length === 0) return;
+    const bruteList   = data.brute_force || [];
+    const allAttacks  = data.all_attacks  || [];
+    const summary     = data.summary      || [];
 
-    // Prendre l'IP avec le plus de tentatives
-    const worst = bruteList.reduce((a, b) => a.count > b.count ? a : b);
+    // ── 1. Brute Force depuis le tracker IP ──────────────
+    if (bruteList.length > 0) {
+      const worst = bruteList.reduce((a, b) => a.count > b.count ? a : b);
+      const detected = {
+        name: 'Brute Force / Credential Stuffing',
+        icon: '🔐',
+        severity: 'critical',
+        confidence: 95,
+        description: `${worst.count} tentatives échouées depuis IP ${worst.ip}. Première: ${worst.first_seen} — Dernière: ${worst.last_seen}`,
+        recommendation: 'Bloquer l\'IP source, activer MFA, renforcer le rate limiting.'
+      };
+      _forceUpdateAttackPanel(detected);
 
-    const detected = {
-      name: 'Brute Force / Credential Stuffing',
-      icon: '🔐',
-      severity: 'critical',
-      confidence: 95,
-      description: `${worst.count} tentatives échouées depuis IP ${worst.ip}. Première: ${worst.first_seen} — Dernière: ${worst.last_seen}`,
-      recommendation: 'Bloquer l\'IP source, activer MFA, renforcer le rate limiting.'
+      const key = `${worst.ip}-${Math.floor(worst.count / 5)}`;
+      if (!_seenBruteKeys[key]) {
+        _seenBruteKeys[key] = true;
+        addToAttackHistory(detected, new Date());
+        appendSystemLog(`🚨 [BRUTE FORCE] IP: ${worst.ip} — ${worst.count} tentatives détectées`, 'ERROR');
+        autoSendAttackAlert(detected);
+      }
+    }
+
+    // ── 2. Toutes les autres attaques détectées par Flask ─
+    const SEVERITY_MAP = {
+      'SQL Injection':          { icon: '💉', severity: 'high',     confidence: 88 },
+      'XSS':                    { icon: '🕷️', severity: 'high',     confidence: 85 },
+      'Path Traversal / LFI':   { icon: '📂', severity: 'high',     confidence: 87 },
+      'Command Injection / RCE':{ icon: '💻', severity: 'critical', confidence: 92 },
+      'Scanner / Reconnaissance':{ icon: '🔍', severity: 'medium',  confidence: 75 },
+      'Brute Force':            { icon: '🔐', severity: 'critical', confidence: 95 },
     };
 
-    // Toujours mettre à jour le panneau TYPE D'ATTAQUE
-    _forceUpdateAttackPanel(detected);
+    // Traiter le résumé par type pour mettre à jour le panneau Attack Intel
+    // (on prend le type avec la sévérité la plus haute, hors Brute Force déjà traité)
+    const NON_BRUTE = summary.filter(s => s.type !== 'Brute Force');
+    if (NON_BRUTE.length > 0 && bruteList.length === 0) {
+      // Prioriser par sévérité : CRITICAL > HIGH > MEDIUM
+      const sevOrder = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
+      const topAttack = NON_BRUTE.sort(
+        (a, b) => (sevOrder[b.severity] || 0) - (sevOrder[a.severity] || 0)
+      )[0];
 
-    // Ajouter à l'historique UNE SEULE FOIS par tranche de 5 nouvelles tentatives
-    const key = `${worst.ip}-${Math.floor(worst.count / 5)}`;
-    if (!_seenBruteKeys[key]) {
-      _seenBruteKeys[key] = true;
-      addToAttackHistory(detected, new Date());
-      appendSystemLog(`🚨 [BRUTE FORCE] IP: ${worst.ip} — ${worst.count} tentatives détectées`, 'ERROR');
-      autoSendAttackAlert(detected);
+      const meta = SEVERITY_MAP[topAttack.type] || { icon: '⚠️', severity: 'medium', confidence: 75 };
+      const detected = {
+        name:           topAttack.type,
+        icon:           meta.icon,
+        severity:       topAttack.severity.toLowerCase(),
+        confidence:     topAttack.confidence || meta.confidence,
+        description:    `${topAttack.count} occurrence(s) détectée(s). Dernière IP: ${topAttack.last_ip} à ${topAttack.last_time}.`,
+        recommendation: getRecommendation(topAttack.type),
+      };
+      _forceUpdateAttackPanel(detected);
+    }
+
+    // ── 3. Nouvelles attaques dans all_attacks → historique ─
+    allAttacks.forEach(entry => {
+      const key = `${entry.type}-${entry.ip}-${entry.time}`;
+      if (!_seenAttackKeys[key]) {
+        _seenAttackKeys[key] = true;
+        const meta = SEVERITY_MAP[entry.type] || { icon: '⚠️', severity: 'medium', confidence: 75 };
+        const histEntry = {
+          name:       entry.type,
+          icon:       meta.icon,
+          severity:   (entry.severity || 'MEDIUM').toLowerCase(),
+          confidence: entry.confidence || meta.confidence,
+          time:       entry.time,
+        };
+        addToAttackHistory(histEntry, entry.time);
+        appendSystemLog(
+          `🚨 [${entry.severity || 'MEDIUM'}] ${entry.type} — IP: ${entry.ip} — ${entry.detail}`,
+          entry.severity === 'CRITICAL' || entry.severity === 'HIGH' ? 'ERROR' : 'WARN'
+        );
+
+        // Auto-email si sévérité haute
+        if (['CRITICAL','HIGH'].includes(entry.severity)) {
+          const alertObj = {
+            name:           entry.type,
+            severity:       (entry.severity || 'MEDIUM').toLowerCase(),
+            confidence:     entry.confidence || meta.confidence,
+            description:    `Attaque détectée depuis IP ${entry.ip}. Détail: ${entry.detail}`,
+            recommendation: getRecommendation(entry.type),
+          };
+          autoSendAttackAlert(alertObj);
+        }
+      }
+    });
+
+    // ── 4. Si aucune attaque → effacer le panneau ─────────
+    if (bruteList.length === 0 && NON_BRUTE.length === 0) {
+      updateAttackIntelPanel(null, new Date());
     }
 
   } catch(e) {
@@ -1543,6 +1613,19 @@ async function fetchAttackStats() {
       console.warn('fetchAttackStats error:', e.message);
     }
   }
+}
+
+// Retourne la recommandation selon le type d'attaque
+function getRecommendation(attackType) {
+  const recs = {
+    'SQL Injection':           'Vérifier les paramètres non sanitisés, activer WAF SQL rules, auditer les requêtes DB.',
+    'XSS':                     'Activer Content-Security-Policy, valider et encoder toutes les entrées utilisateur.',
+    'Path Traversal / LFI':    'Valider les chemins d\'accès, restreindre les permissions fichiers, activer chroot.',
+    'Command Injection / RCE': 'Désactiver l\'exécution de commandes, valider toutes les entrées, isoler le conteneur.',
+    'Scanner / Reconnaissance':'Bloquer les user-agents suspects, surveiller les logs d\'accès, activer l\'IDS.',
+    'Brute Force':             'Bloquer l\'IP source, activer MFA, renforcer le rate limiting.',
+  };
+  return recs[attackType] || 'Analyser les logs manuellement et contacter l\'équipe sécurité.';
 }
 
 // Met à jour UNIQUEMENT le panneau Type d'Attaque (sans toucher l'historique)
@@ -1780,6 +1863,7 @@ function drawChart() {
 // ═══════════════════════════════════════════════════════════
 
 // Dictionnaire des signatures d'attaques
+// Les patterns matchent à la fois les logs CloudWatch et les messages Flask [ATTACK DETECTED]
 const ATTACK_SIGNATURES = [
   {
     name: 'Brute Force / Credential Stuffing',
@@ -1787,7 +1871,11 @@ const ATTACK_SIGNATURES = [
     severity: 'critical',
     confidence: 95,
     description: 'Tentatives répétées de connexion échouées. Attaque par force brute détectée sur les endpoints d\'authentification.',
-    patterns: [/401|403|unauthorized|forbidden|login.failed|invalid.creden/i],
+    patterns: [
+      /401|403|unauthorized|forbidden|login.failed|invalid.creden/i,
+      /\[ATTACK DETECTED\].*type=Brute Force/i,
+      /\[LOGIN FAILED\]/i,
+    ],
     threshold: (counts) => counts.unauth > 10,
     recommendation: 'Bloquer l\'IP source, activer MFA, renforcer le rate limiting.'
   },
@@ -1807,7 +1895,10 @@ const ATTACK_SIGNATURES = [
     severity: 'high',
     confidence: 88,
     description: 'Tentatives d\'injection SQL détectées dans les requêtes. Possible exfiltration ou altération de données.',
-    patterns: [/sql.inject|union.select|drop.table|1=1|or.1=1|'--|%27|xp_|exec\(|cast\(/i],
+    patterns: [
+      /sql.inject|union.select|drop.table|1=1|or.1=1|'--|%27|xp_|exec\(|cast\(/i,
+      /\[ATTACK DETECTED\].*type=SQL Injection/i,
+    ],
     threshold: null,
     recommendation: 'Vérifier les paramètres non sanitisés, activer WAF SQL rules, auditer les requêtes DB.'
   },
@@ -1817,7 +1908,10 @@ const ATTACK_SIGNATURES = [
     severity: 'high',
     confidence: 85,
     description: 'Injection de scripts malveillants détectée. Possible vol de session ou exécution de code côté client.',
-    patterns: [/<script|javascript:|onerror=|onload=|alert\(|%3Cscript|xss/i],
+    patterns: [
+      /<script|javascript:|onerror=|onload=|alert\(|%3Cscript|xss/i,
+      /\[ATTACK DETECTED\].*type=XSS/i,
+    ],
     threshold: null,
     recommendation: 'Activer Content-Security-Policy, valider et encoder toutes les entrées utilisateur.'
   },
@@ -1827,7 +1921,10 @@ const ATTACK_SIGNATURES = [
     severity: 'high',
     confidence: 87,
     description: 'Tentatives d\'accès à des fichiers système détectées. L\'attaquant tente de lire des fichiers sensibles.',
-    patterns: [/\.\.\//i, /\/etc\/passwd|\/etc\/shadow|\.\.\\|%2e%2e/i],
+    patterns: [
+      /\.\.\//i, /\/etc\/passwd|\/etc\/shadow|\.\.\\|%2e%2e/i,
+      /\[ATTACK DETECTED\].*type=Path Traversal/i,
+    ],
     threshold: null,
     recommendation: 'Valider les chemins d\'accès, restreindre les permissions fichiers, activer chroot.'
   },
@@ -1837,7 +1934,10 @@ const ATTACK_SIGNATURES = [
     severity: 'critical',
     confidence: 92,
     description: 'Tentative d\'exécution de commandes système à distance. Risque d\'exécution de code arbitraire.',
-    patterns: [/;.*(ls|cat|id|whoami|uname|ping|curl|wget)|`.*`|\$\(.*\)|cmd=|exec=|system\(/i],
+    patterns: [
+      /;.*(ls|cat|id|whoami|uname|ping|curl|wget)|`.*`|\$\(.*\)|cmd=|exec=|system\(/i,
+      /\[ATTACK DETECTED\].*type=Command Injection/i,
+    ],
     threshold: null,
     recommendation: 'Désactiver l\'exécution de commandes, valider toutes les entrées, isoler le conteneur.'
   },
@@ -1847,7 +1947,10 @@ const ATTACK_SIGNATURES = [
     severity: 'medium',
     confidence: 75,
     description: 'Scan de ports ou d\'endpoints détecté. Un attaquant cartographie votre infrastructure.',
-    patterns: [/nikto|nmap|sqlmap|burpsuite|nessus|masscan|zgrab|dirbuster|gobuster/i],
+    patterns: [
+      /nikto|nmap|sqlmap|burpsuite|nessus|masscan|zgrab|dirbuster|gobuster/i,
+      /\[ATTACK DETECTED\].*type=Scanner/i,
+    ],
     threshold: null,
     recommendation: 'Bloquer les user-agents suspects, surveiller les logs d\'accès, activer l\'IDS.'
   },

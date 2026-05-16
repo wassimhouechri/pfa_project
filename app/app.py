@@ -116,6 +116,11 @@ _brute_force_tracker = defaultdict(lambda: {"count": 0, "first_seen": 0, "last_s
 BRUTE_FORCE_THRESHOLD = 10   # nb de 401/403 en BRUTE_FORCE_WINDOW secondes
 BRUTE_FORCE_WINDOW    = 300  # 5 minutes
 
+# Tracker en mémoire de toutes les attaques détectées (tous types)
+# Structure: liste de dicts { type, ip, time, detail, severity }
+_attack_tracker = []
+ATTACK_TRACKER_MAX = 100  # garder les 100 dernières attaques
+
 
 def _detect_attack_in_request():
     """
@@ -148,7 +153,9 @@ def _detect_attack_in_request():
 
 
 def _log_attack(attack_name, detail="", extra=""):
-    """Écrit un log WARNING structuré — capté par CloudWatch."""
+    """Écrit un log WARNING structuré — capté par CloudWatch.
+    Stocke aussi l'attaque en mémoire pour l'API /api/soc/attack-stats."""
+    global _attack_tracker
     app.logger.warning(
         f"[ATTACK DETECTED] type={attack_name} "
         f"ip={request.remote_addr} "
@@ -157,6 +164,20 @@ def _log_attack(attack_name, detail="", extra=""):
         f"detail={detail} "
         f"{extra}"
     )
+    # Stocker en mémoire pour le dashboard
+    _attack_tracker.append({
+        "type":     attack_name,
+        "ip":       request.remote_addr,
+        "method":   request.method,
+        "url":      request.url[:200],
+        "time":     datetime.now(timezone.utc).strftime("%H:%M:%S"),
+        "detail":   detail[:100],
+        "severity": ATTACK_META.get(attack_name, {}).get("severity", "MEDIUM"),
+        "confidence": ATTACK_META.get(attack_name, {}).get("confidence", 75),
+    })
+    # Garder uniquement les N dernières
+    if len(_attack_tracker) > ATTACK_TRACKER_MAX:
+        _attack_tracker = _attack_tracker[-ATTACK_TRACKER_MAX:]
 
 
 def _send_sns_alert(attack_name, severity, confidence, description, recommendation):
@@ -629,24 +650,48 @@ def soc_attack_stats():
     """
     Retourne les statistiques d'attaques détectées par le middleware Flask
     depuis le démarrage du container (en mémoire).
-    Permet au SOC Dashboard JS d'afficher les attaques en temps réel.
+    Retourne : brute_force (IPs ayant dépassé le seuil) + all_attacks (tous types).
     """
-    stats = []
+    # ── Brute force par IP ─────────────────────────────────
+    brute_list = []
     for ip, data in _brute_force_tracker.items():
         if data["count"] >= BRUTE_FORCE_THRESHOLD:
-            stats.append({
-                "type": "Brute Force",
-                "ip": ip,
-                "count": data["count"],
+            brute_list.append({
+                "type":       "Brute Force",
+                "ip":         ip,
+                "count":      data["count"],
                 "first_seen": datetime.fromtimestamp(
                     data["first_seen"], tz=timezone.utc
                 ).strftime("%H:%M:%S") if data["first_seen"] else "--",
                 "last_seen": datetime.fromtimestamp(
                     data["last_seen"], tz=timezone.utc
                 ).strftime("%H:%M:%S") if data["last_seen"] else "--",
-                "severity": "CRITICAL",
+                "severity":  "CRITICAL",
             })
-    return jsonify({"ok": True, "brute_force": stats})
+
+    # ── Résumé par type d'attaque ──────────────────────────
+    summary = {}
+    for entry in _attack_tracker:
+        t = entry["type"]
+        if t not in summary:
+            summary[t] = {
+                "type":       t,
+                "count":      0,
+                "severity":   entry["severity"],
+                "confidence": entry["confidence"],
+                "last_ip":    entry["ip"],
+                "last_time":  entry["time"],
+            }
+        summary[t]["count"]    += 1
+        summary[t]["last_ip"]   = entry["ip"]
+        summary[t]["last_time"] = entry["time"]
+
+    return jsonify({
+        "ok":          True,
+        "brute_force": brute_list,
+        "all_attacks": list(_attack_tracker[-20:]),   # 20 dernières attaques détaillées
+        "summary":     list(summary.values()),         # résumé par type
+    })
 
 
 # ══════════════════════════════════════════════════════
