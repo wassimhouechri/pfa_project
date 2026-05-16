@@ -18,6 +18,19 @@ import time
 import threading
 import queue
 import json
+import urllib.request
+import io
+
+# ── PDF (reportlab) — installé via requirements.txt ──
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+    from reportlab.lib.units import cm
+    REPORTLAB_OK = True
+except ImportError:
+    REPORTLAB_OK = False
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-change-in-prod")
@@ -36,6 +49,12 @@ ALARM_NAMES   = [
     "SOC-Unauthorized-Access",
     "SOC-ECS-Task-Stopped",
 ]
+WAF_IP_SET_ID        = os.environ.get("WAF_IP_SET_ID", "")
+WAF_IP_SET_NAME      = os.environ.get("WAF_IP_SET_NAME", "SOC-Blocked-IPs")
+WAF_SCOPE            = os.environ.get("WAF_SCOPE", "REGIONAL")
+SES_FROM_EMAIL       = os.environ.get("SES_FROM_EMAIL", "")
+SES_TO_EMAIL         = os.environ.get("SES_TO_EMAIL", "")
+AUTO_BLOCK_THRESHOLD = int(os.environ.get("AUTO_BLOCK_THRESHOLD", "10"))
 
 # ── Utilisateurs en mémoire (demo) ──────────────────
 USERS = {
@@ -979,6 +998,390 @@ def soc_stream():
             "Connection":        "keep-alive",
         },
     )
+
+# ══════════════════════════════════════════════════════
+#  FEATURE 1 — BLOCAGE AUTOMATIQUE IP DANS AWS WAF
+# ══════════════════════════════════════════════════════
+
+# Suivi des IPs bloquées (en mémoire + WAF)
+_blocked_ips: dict = {}   # { ip: {"time": str, "reason": str, "count": int} }
+_block_lock = threading.Lock()
+
+
+def _waf_block_ip(ip: str, reason: str = "Auto-blocked by SOC"):
+    """Ajoute l'IP dans le WAF IP Set AWS et le tracker local."""
+    with _block_lock:
+        if ip in _blocked_ips:
+            return  # déjà bloquée
+
+    # Appel WAF
+    if WAF_IP_SET_ID:
+        try:
+            waf = boto3.client("wafv2", region_name=AWS_REGION)
+            # Récupérer le token courant (obligatoire pour update)
+            current = waf.get_ip_set(
+                Name=WAF_IP_SET_NAME,
+                Scope=WAF_SCOPE,
+                Id=WAF_IP_SET_ID,
+            )
+            existing_addresses = current["IPSet"]["Addresses"]
+            cidr = f"{ip}/32"
+            if cidr not in existing_addresses:
+                existing_addresses.append(cidr)
+                waf.update_ip_set(
+                    Name=WAF_IP_SET_NAME,
+                    Scope=WAF_SCOPE,
+                    Id=WAF_IP_SET_ID,
+                    LockToken=current["LockToken"],
+                    Addresses=existing_addresses,
+                )
+                app.logger.warning(f"[WAF BLOCK] IP {ip} ajoutée au WAF IP Set — {reason}")
+        except Exception as e:
+            app.logger.error(f"[WAF BLOCK] Erreur ajout WAF: {e}")
+
+    with _block_lock:
+        _blocked_ips[ip] = {
+            "ip":     ip,
+            "time":   datetime.now(timezone.utc).strftime("%H:%M:%S"),
+            "reason": reason,
+            "count":  _brute_force_tracker.get(ip, {}).get("count", 0),
+        }
+
+
+def _check_auto_block(ip: str):
+    """Vérifie si une IP doit être bloquée automatiquement."""
+    attack_count = sum(1 for a in _attack_tracker if a["ip"] == ip)
+    brute_count  = _brute_force_tracker.get(ip, {}).get("count", 0)
+    total = attack_count + brute_count
+    if total >= AUTO_BLOCK_THRESHOLD and ip not in _blocked_ips:
+        _waf_block_ip(ip, reason=f"Auto-block: {total} attaques détectées")
+        # Notifier via SNS
+        try:
+            sns = boto3.client("sns", region_name=AWS_REGION)
+            sns.publish(
+                TopicArn=SNS_TOPIC_ARN,
+                Subject=f"🚫 SOC AUTO-BLOCK — IP {ip} bloquée",
+                Message=(
+                    f"IP {ip} automatiquement bloquée par le SOC Dashboard.\n"
+                    f"Raison  : {total} attaques détectées\n"
+                    f"Heure   : {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
+                    f"Cluster : {ECS_CLUSTER}\n"
+                ),
+            )
+        except Exception:
+            pass
+
+
+# Hooker _check_auto_block dans _log_attack
+_orig_log_attack = _log_attack
+
+
+def _log_attack(attack_name, detail="", extra=""):
+    _orig_log_attack(attack_name, detail, extra)
+    _check_auto_block(request.remote_addr)
+
+
+@app.route("/api/soc/blocked-ips")
+@login_required
+def soc_blocked_ips():
+    """Retourne la liste des IPs bloquées automatiquement."""
+    with _block_lock:
+        return jsonify({"ok": True, "blocked": list(_blocked_ips.values())})
+
+
+@app.route("/api/soc/block-ip", methods=["POST"])
+@login_required
+def soc_block_ip_manual():
+    """Blocage manuel d'une IP depuis le dashboard."""
+    body   = request.get_json(force=True) or {}
+    ip     = body.get("ip", "").strip()
+    reason = body.get("reason", f"Blocage manuel par {session.get('username','?')}")
+    if not ip:
+        return jsonify({"ok": False, "error": "IP manquante"}), 400
+    _waf_block_ip(ip, reason=reason)
+    return jsonify({"ok": True, "message": f"IP {ip} bloquée", "ip": ip})
+
+
+# ══════════════════════════════════════════════════════
+#  FEATURE 2 — GÉOLOCALISATION IP
+# ══════════════════════════════════════════════════════
+
+_geo_cache: dict = {}   # { ip: {country, city, org, lat, lon, flag} }
+_geo_lock = threading.Lock()
+
+
+def _geolocate_ip(ip: str) -> dict:
+    """Géolocalise une IP via ip-api.com (gratuit, 45 req/min)."""
+    with _geo_lock:
+        if ip in _geo_cache:
+            return _geo_cache[ip]
+
+    result = {"country": "?", "city": "?", "org": "?", "lat": 0, "lon": 0, "flag": "🌐", "isp": "?"}
+    try:
+        # IPs privées → localhost
+        if ip.startswith(("192.168.", "10.", "172.", "127.", "::1")):
+            result = {"country": "Local", "city": "Localhost", "org": "LAN",
+                      "lat": 0, "lon": 0, "flag": "🏠", "isp": "Local Network"}
+        else:
+            url  = f"http://ip-api.com/json/{ip}?fields=status,country,countryCode,city,org,isp,lat,lon"
+            req  = urllib.request.Request(url, headers={"User-Agent": "SOC-Dashboard/1.0"})
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode())
+            if data.get("status") == "success":
+                cc   = data.get("countryCode", "")
+                flag = "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in cc.upper()) if cc else "🌐"
+                result = {
+                    "country": data.get("country", "?"),
+                    "city":    data.get("city", "?"),
+                    "org":     data.get("org", "?"),
+                    "isp":     data.get("isp", "?"),
+                    "lat":     data.get("lat", 0),
+                    "lon":     data.get("lon", 0),
+                    "flag":    flag,
+                }
+    except Exception as e:
+        app.logger.debug(f"[GEO] Erreur pour {ip}: {e}")
+
+    with _geo_lock:
+        _geo_cache[ip] = result
+    return result
+
+
+@app.route("/api/soc/geolocate")
+@login_required
+def soc_geolocate():
+    """Géolocalise une IP ou toutes les IPs attaquantes connues."""
+    ip = request.args.get("ip", "").strip()
+    if ip:
+        return jsonify({"ok": True, "ip": ip, "geo": _geolocate_ip(ip)})
+
+    # Retourne toutes les IPs avec geo + count pour la carte
+    ip_counts: dict = {}
+    for entry in _attack_tracker:
+        a_ip = entry["ip"]
+        if a_ip not in ip_counts:
+            ip_counts[a_ip] = {"count": 0, "types": set(), "last_time": entry["time"]}
+        ip_counts[a_ip]["count"] += 1
+        ip_counts[a_ip]["types"].add(entry["type"])
+        ip_counts[a_ip]["last_time"] = entry["time"]
+
+    result = []
+    for a_ip, info in ip_counts.items():
+        geo = _geolocate_ip(a_ip)
+        result.append({
+            "ip":        a_ip,
+            "count":     info["count"],
+            "types":     list(info["types"]),
+            "last_time": info["last_time"],
+            "blocked":   a_ip in _blocked_ips,
+            **geo,
+        })
+    return jsonify({"ok": True, "attackers": result})
+
+
+# ══════════════════════════════════════════════════════
+#  FEATURE 3 — RAPPORT PDF QUOTIDIEN VIA SES
+# ══════════════════════════════════════════════════════
+
+def _build_pdf_report() -> bytes:
+    """Génère un rapport PDF des attaques et métriques."""
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            topMargin=1.5*cm, bottomMargin=1.5*cm,
+                            leftMargin=2*cm, rightMargin=2*cm)
+    styles = getSampleStyleSheet()
+    story  = []
+
+    # ── Couleurs ──
+    C_DARK  = colors.HexColor("#030a0e")
+    C_CYAN  = colors.HexColor("#00d4ff")
+    C_GREEN = colors.HexColor("#00ff88")
+    C_RED   = colors.HexColor("#ff3366")
+    C_WARN  = colors.HexColor("#ffaa00")
+    C_GREY  = colors.HexColor("#4a7a90")
+
+    title_style = ParagraphStyle("title", fontName="Helvetica-Bold",
+                                 fontSize=20, textColor=C_CYAN, spaceAfter=4)
+    sub_style   = ParagraphStyle("sub",   fontName="Helvetica",
+                                 fontSize=10, textColor=C_GREY, spaceAfter=12)
+    h2_style    = ParagraphStyle("h2",    fontName="Helvetica-Bold",
+                                 fontSize=13, textColor=C_CYAN, spaceBefore=14, spaceAfter=6)
+    body_style  = ParagraphStyle("body",  fontName="Helvetica",
+                                 fontSize=9,  textColor=colors.HexColor("#b8d4e0"), spaceAfter=4)
+
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    # ── En-tête ──
+    story.append(Paragraph("🛡️  SOC DASHBOARD — RAPPORT DE SÉCURITÉ", title_style))
+    story.append(Paragraph(f"Généré le {now_str} · Cluster: {ECS_CLUSTER} · Service: {ECS_SERVICE}", sub_style))
+    story.append(HRFlowable(width="100%", thickness=1, color=C_CYAN))
+    story.append(Spacer(1, 0.3*cm))
+
+    # ── Résumé exécutif ──
+    story.append(Paragraph("📊 RÉSUMÉ EXÉCUTIF", h2_style))
+    total_attacks = len(_attack_tracker)
+    blocked_count = len(_blocked_ips)
+    attack_types  = list({a["type"] for a in _attack_tracker})
+    unique_ips    = list({a["ip"] for a in _attack_tracker})
+
+    summary_data = [
+        ["Indicateur", "Valeur"],
+        ["Total attaques détectées", str(total_attacks)],
+        ["IPs sources uniques",      str(len(unique_ips))],
+        ["IPs bloquées (WAF)",       str(blocked_count)],
+        ["Types d'attaques",         ", ".join(attack_types) or "Aucun"],
+        ["Accès refusés (401/403)",  str(sum(d.get("count", 0) for d in _brute_force_tracker.values()))],
+    ]
+    t = Table(summary_data, colWidths=[9*cm, 8*cm])
+    t.setStyle(TableStyle([
+        ("BACKGROUND",  (0, 0), (-1, 0),  C_CYAN),
+        ("TEXTCOLOR",   (0, 0), (-1, 0),  C_DARK),
+        ("FONTNAME",    (0, 0), (-1, 0),  "Helvetica-Bold"),
+        ("FONTSIZE",    (0, 0), (-1, -1), 9),
+        ("BACKGROUND",  (0, 1), (-1, -1), colors.HexColor("#0d1f2d")),
+        ("TEXTCOLOR",   (0, 1), (-1, -1), colors.HexColor("#b8d4e0")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#0d1f2d"), colors.HexColor("#060f15")]),
+        ("GRID",        (0, 0), (-1, -1), 0.5, C_GREY),
+        ("TOPPADDING",  (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 0.4*cm))
+
+    # ── Détail des attaques ──
+    if _attack_tracker:
+        story.append(Paragraph("⚡ DÉTAIL DES ATTAQUES (20 dernières)", h2_style))
+        attack_data = [["Heure", "Type", "IP Source", "Sévérité", "Confiance"]]
+        for a in list(_attack_tracker)[-20:]:
+            sev   = a.get("severity", "MEDIUM")
+            color = C_RED if sev == "CRITICAL" else (C_WARN if sev == "HIGH" else C_GREEN)
+            attack_data.append([
+                a.get("time", "--"),
+                a.get("type", "--"),
+                a.get("ip",   "--"),
+                sev,
+                f"{a.get('confidence', 0)}%",
+            ])
+        t2 = Table(attack_data, colWidths=[2.5*cm, 5*cm, 4*cm, 3*cm, 2.5*cm])
+        t2.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0),  C_CYAN),
+            ("TEXTCOLOR",     (0, 0), (-1, 0),  C_DARK),
+            ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 8),
+            ("BACKGROUND",    (0, 1), (-1, -1), colors.HexColor("#0d1f2d")),
+            ("TEXTCOLOR",     (0, 1), (-1, -1), colors.HexColor("#b8d4e0")),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.HexColor("#0d1f2d"), colors.HexColor("#060f15")]),
+            ("GRID",          (0, 0), (-1, -1), 0.5, C_GREY),
+            ("TOPPADDING",    (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(t2)
+        story.append(Spacer(1, 0.4*cm))
+
+    # ── IPs bloquées ──
+    if _blocked_ips:
+        story.append(Paragraph("🚫 IPs BLOQUÉES AUTOMATIQUEMENT", h2_style))
+        block_data = [["IP", "Heure blocage", "Raison"]]
+        with _block_lock:
+            for b in _blocked_ips.values():
+                block_data.append([b["ip"], b["time"], b["reason"][:60]])
+        t3 = Table(block_data, colWidths=[4*cm, 3*cm, 10*cm])
+        t3.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0),  C_RED),
+            ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 8),
+            ("BACKGROUND",    (0, 1), (-1, -1), colors.HexColor("#1a0a0d")),
+            ("TEXTCOLOR",     (0, 1), (-1, -1), colors.HexColor("#ffaaaa")),
+            ("GRID",          (0, 0), (-1, -1), 0.5, C_GREY),
+            ("TOPPADDING",    (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(t3)
+        story.append(Spacer(1, 0.4*cm))
+
+    # ── Footer ──
+    story.append(HRFlowable(width="100%", thickness=1, color=C_GREY))
+    story.append(Spacer(1, 0.2*cm))
+    story.append(Paragraph(
+        f"DevSecOps SOC Dashboard · {ECS_CLUSTER} · Rapport confidentiel · {now_str}",
+        ParagraphStyle("footer", fontName="Helvetica", fontSize=7, textColor=C_GREY)
+    ))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf.read()
+
+
+@app.route("/api/soc/report/download")
+@login_required
+def soc_report_download():
+    """Télécharge le rapport PDF depuis le navigateur."""
+    if not REPORTLAB_OK:
+        return jsonify({"ok": False, "error": "reportlab non installé"}), 500
+    try:
+        pdf_bytes = _build_pdf_report()
+        now_str   = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+        return Response(
+            pdf_bytes,
+            mimetype="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=soc_report_{now_str}.pdf"}
+        )
+    except Exception as ex:
+        return jsonify({"ok": False, "error": str(ex)}), 500
+
+
+@app.route("/api/soc/report/send", methods=["POST"])
+@login_required
+def soc_report_send():
+    """Génère le PDF et l'envoie par email via AWS SES."""
+    if not REPORTLAB_OK:
+        return jsonify({"ok": False, "error": "reportlab non installé"}), 500
+    if not SES_FROM_EMAIL or not SES_TO_EMAIL:
+        return jsonify({"ok": False, "error": "SES_FROM_EMAIL / SES_TO_EMAIL non configurés"}), 400
+    try:
+        import email as email_lib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.base import MIMEBase
+        from email.mime.text import MIMEText
+        import base64
+
+        pdf_bytes = _build_pdf_report()
+        now_str   = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        filename  = f"soc_report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.pdf"
+
+        # Construire email MIME
+        msg = MIMEMultipart()
+        msg["Subject"] = f"📊 SOC Dashboard — Rapport de sécurité {now_str}"
+        msg["From"]    = SES_FROM_EMAIL
+        msg["To"]      = SES_TO_EMAIL
+
+        body = MIMEText(
+            f"Bonjour,\n\nVeuillez trouver en pièce jointe le rapport de sécurité SOC.\n\n"
+            f"Cluster : {ECS_CLUSTER}\nService : {ECS_SERVICE}\nGénéré  : {now_str}\n\n"
+            f"Total attaques : {len(_attack_tracker)}\nIPs bloquées   : {len(_blocked_ips)}\n\n"
+            f"--\nDevSecOps SOC Dashboard", "plain"
+        )
+        msg.attach(body)
+
+        attachment = MIMEBase("application", "pdf")
+        attachment.set_payload(pdf_bytes)
+        from email import encoders
+        encoders.encode_base64(attachment)
+        attachment.add_header("Content-Disposition", f"attachment; filename={filename}")
+        msg.attach(attachment)
+
+        ses = boto3.client("ses", region_name=AWS_REGION)
+        ses.send_raw_email(
+            Source=SES_FROM_EMAIL,
+            Destinations=[SES_TO_EMAIL],
+            RawMessage={"Data": msg.as_bytes()},
+        )
+        app.logger.info(f"[SOC REPORT] PDF envoyé à {SES_TO_EMAIL}")
+        return jsonify({"ok": True, "message": f"Rapport PDF envoyé à {SES_TO_EMAIL}"})
+    except Exception as ex:
+        return jsonify({"ok": False, "error": str(ex)}), 500
+
 
 # ══════════════════════════════════════════════════════
 #  LANCEMENT

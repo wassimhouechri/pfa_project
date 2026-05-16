@@ -1207,6 +1207,157 @@
 
   </div>
 
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- CARTE MONDIALE DES ATTAQUES                   -->
+  <!-- ══════════════════════════════════════════════ -->
+  <div class="full-panel" style="margin-top:16px">
+    <div class="panel-header">
+      <div class="panel-title">🗺️ CARTE MONDIALE DES ATTAQUES</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="panel-badge" id="mapTs">--</div>
+        <button class="btn btn-primary" style="padding:4px 10px;font-size:10px" onclick="loadAttackMap()">↺ REFRESH</button>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0;position:relative;min-height:340px;background:#060f15">
+      <!-- SVG world map container -->
+      <div id="worldMapContainer" style="position:relative;width:100%;overflow:hidden">
+        <svg id="worldMap" viewBox="0 0 1000 500" style="width:100%;display:block;background:#060f15">
+          <!-- Grille de fond -->
+          <defs>
+            <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+              <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#0e3a52" stroke-width="0.5"/>
+            </pattern>
+            <radialGradient id="attackGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" style="stop-color:#ff3366;stop-opacity:0.8"/>
+              <stop offset="100%" style="stop-color:#ff3366;stop-opacity:0"/>
+            </radialGradient>
+            <filter id="glow">
+              <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+              <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+          </defs>
+          <rect width="1000" height="500" fill="url(#grid)"/>
+          <!-- Lignes latitude -->
+          <line x1="0" y1="125" x2="1000" y2="125" stroke="#0e3a52" stroke-width="0.8" stroke-dasharray="4,4"/>
+          <line x1="0" y1="250" x2="1000" y2="250" stroke="#00d4ff" stroke-width="0.5" opacity="0.4"/>
+          <line x1="0" y1="375" x2="1000" y2="375" stroke="#0e3a52" stroke-width="0.8" stroke-dasharray="4,4"/>
+          <!-- Lignes longitude -->
+          <line x1="250" y1="0" x2="250" y2="500" stroke="#0e3a52" stroke-width="0.8" stroke-dasharray="4,4"/>
+          <line x1="500" y1="0" x2="500" y2="500" stroke="#00d4ff" stroke-width="0.5" opacity="0.4"/>
+          <line x1="750" y1="0" x2="750" y2="500" stroke="#0e3a52" stroke-width="0.8" stroke-dasharray="4,4"/>
+          <!-- Labels axes -->
+          <text x="5" y="128" fill="#2a5068" font-size="8" font-family="monospace">45°N</text>
+          <text x="5" y="253" fill="#2a5068" font-size="8" font-family="monospace">0°</text>
+          <text x="5" y="378" fill="#2a5068" font-size="8" font-family="monospace">45°S</text>
+          <text x="248" y="12" fill="#2a5068" font-size="8" font-family="monospace" text-anchor="end">-90°</text>
+          <text x="498" y="12" fill="#2a5068" font-size="8" font-family="monospace" text-anchor="end">0°</text>
+          <text x="748" y="12" fill="#2a5068" font-size="8" font-family="monospace" text-anchor="end">90°</text>
+          <!-- Continents simplifiés (polygones) -->
+          <!-- Amérique du Nord -->
+          <polygon points="80,80 180,70 200,90 220,130 200,180 160,200 100,190 70,160 60,120" fill="#0a2535" stroke="#0e3a52" stroke-width="1"/>
+          <!-- Amérique du Sud -->
+          <polygon points="150,220 200,210 230,230 240,290 220,350 180,380 140,360 130,310 140,260" fill="#0a2535" stroke="#0e3a52" stroke-width="1"/>
+          <!-- Europe -->
+          <polygon points="430,70 480,65 510,80 520,110 500,130 460,135 430,120 420,95" fill="#0a2535" stroke="#0e3a52" stroke-width="1"/>
+          <!-- Afrique -->
+          <polygon points="440,150 490,140 520,160 530,220 510,290 480,330 440,320 420,270 410,210 420,170" fill="#0a2535" stroke="#0e3a52" stroke-width="1"/>
+          <!-- Asie -->
+          <polygon points="520,70 650,60 720,80 760,110 750,160 700,180 640,170 580,150 530,130 510,100" fill="#0a2535" stroke="#0e3a52" stroke-width="1"/>
+          <!-- Océanie -->
+          <polygon points="720,280 780,270 820,290 830,330 800,360 750,355 720,330 710,300" fill="#0a2535" stroke="#0e3a52" stroke-width="1"/>
+          <!-- Points des attaques dynamiques -->
+          <g id="attackPoints"></g>
+          <!-- Lignes de connexion vers le serveur (AWS us-east-1) -->
+          <g id="attackLines"></g>
+          <!-- Serveur cible (AWS us-east-1 ~Virginia) -->
+          <circle cx="185" cy="155" r="6" fill="#00ff88" filter="url(#glow)">
+            <animate attributeName="r" values="6;10;6" dur="2s" repeatCount="indefinite"/>
+            <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite"/>
+          </circle>
+          <text x="195" y="152" fill="#00ff88" font-size="9" font-family="monospace">🖥️ AWS ECS</text>
+          <text x="195" y="163" fill="#4a7a90" font-size="7" font-family="monospace">us-east-1</text>
+        </svg>
+        <!-- Légende -->
+        <div style="position:absolute;bottom:10px;left:10px;background:rgba(6,15,21,0.9);padding:8px 12px;border:1px solid #0e3a52;border-radius:4px;font-size:10px;font-family:monospace;color:#b8d4e0">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ff3366;box-shadow:0 0 6px #ff3366"></span> Attaquant actif</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#ffaa00;box-shadow:0 0 6px #ffaa00"></span> Attaquant bloqué</div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#00ff88;box-shadow:0 0 6px #00ff88"></span> Serveur cible (AWS)</div>
+        </div>
+      </div>
+      <!-- Table des attaquants géolocalisés -->
+      <div id="geoTable" style="padding:12px;border-top:1px solid #0e3a52;font-size:11px;font-family:monospace">
+        <div class="empty-state"><span class="spinner"></span>Chargement des données géographiques...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- IPs BLOQUÉES                                  -->
+  <!-- ══════════════════════════════════════════════ -->
+  <div class="full-panel" style="margin-top:16px">
+    <div class="panel-header">
+      <div class="panel-title">🚫 IPs BLOQUÉES AUTOMATIQUEMENT (WAF)</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="panel-badge" id="blockedTs">--</div>
+        <button class="btn btn-primary" style="padding:4px 10px;font-size:10px" onclick="loadBlockedIPs()">↺ REFRESH</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div style="font-size:10px;color:#4a7a90;margin-bottom:10px">
+        ⚡ Blocage automatique déclenché après <strong style="color:#ffaa00">${AUTO_BLOCK_THRESHOLD} attaques</strong> depuis la même IP · Ajout immédiat dans AWS WAF IP Set
+      </div>
+      <div id="blockedIPsList">
+        <div class="empty-state"><span class="spinner"></span>Chargement des IPs bloquées...</div>
+      </div>
+      <!-- Blocage manuel -->
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid #0e3a52">
+        <div style="font-size:11px;color:#4a7a90;margin-bottom:8px">🔒 BLOCAGE MANUEL</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="manualBlockIP" type="text" placeholder="Entrer une IP (ex: 1.2.3.4)" 
+            style="background:#060f15;border:1px solid #0e3a52;color:#b8d4e0;padding:6px 10px;font-family:monospace;font-size:11px;border-radius:3px;flex:1;max-width:300px"
+            onkeydown="if(event.key==='Enter') blockIPManual()">
+          <button class="btn btn-danger" style="padding:6px 14px;font-size:11px" onclick="blockIPManual()">🚫 BLOQUER</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- RAPPORT PDF                                   -->
+  <!-- ══════════════════════════════════════════════ -->
+  <div class="full-panel" style="margin-top:16px">
+    <div class="panel-header">
+      <div class="panel-title">📊 RAPPORT DE SÉCURITÉ PDF</div>
+    </div>
+    <div class="panel-body">
+      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+        <!-- Download -->
+        <div style="flex:1;min-width:240px;background:#060f15;border:1px solid #0e3a52;border-radius:4px;padding:16px">
+          <div style="font-size:12px;color:#00d4ff;font-weight:700;margin-bottom:8px">⬇️ TÉLÉCHARGER LE RAPPORT</div>
+          <div style="font-size:10px;color:#4a7a90;margin-bottom:14px">
+            Génère un PDF complet avec toutes les attaques, IPs bloquées et métriques de la session en cours.
+          </div>
+          <button class="btn btn-primary" style="width:100%;padding:10px" onclick="downloadPDF()">
+            📄 Télécharger PDF maintenant
+          </button>
+          <div id="pdfDownloadStatus" style="margin-top:8px;font-size:10px;color:#4a7a90"></div>
+        </div>
+        <!-- Email via SES -->
+        <div style="flex:1;min-width:240px;background:#060f15;border:1px solid #0e3a52;border-radius:4px;padding:16px">
+          <div style="font-size:12px;color:#00d4ff;font-weight:700;margin-bottom:8px">📧 ENVOYER PAR EMAIL (AWS SES)</div>
+          <div style="font-size:10px;color:#4a7a90;margin-bottom:14px">
+            Envoie le rapport PDF automatiquement à l'adresse configurée via AWS SES.
+            <br><span style="color:#ffaa00">Requiert SES_FROM_EMAIL + SES_TO_EMAIL dans les variables d'environnement.</span>
+          </div>
+          <button class="btn btn-danger" style="width:100%;padding:10px" onclick="sendPDFEmail()">
+            📧 Envoyer le rapport par email
+          </button>
+          <div id="pdfEmailStatus" style="margin-top:8px;font-size:10px;color:#4a7a90"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- FULL LOGS -->
   <div class="full-panel">
     <div class="panel-header">
@@ -1711,6 +1862,239 @@ window.addEventListener('DOMContentLoaded', () => {
 window.addEventListener('beforeunload', () => {
   if (_sseSource) _sseSource.close();
 });
+  // ════════════════════════════════════════════════════
+  //  CARTE MONDIALE — Géolocalisation des attaquants
+  // ════════════════════════════════════════════════════
+
+  // Convertit lat/lon en coordonnées SVG (viewBox 1000x500)
+  function latLonToSVG(lat, lon) {
+    const x = ((lon + 180) / 360) * 1000;
+    const y = ((90 - lat) / 180) * 500;
+    return { x, y };
+  }
+
+  async function loadAttackMap() {
+    document.getElementById('mapTs').textContent = new Date().toLocaleTimeString('fr-FR');
+    try {
+      const res  = await fetch('/api/soc/geolocate', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (!data.ok) return;
+
+      const attackers = data.attackers || [];
+      const svgPoints = document.getElementById('attackPoints');
+      const svgLines  = document.getElementById('attackLines');
+      const geoTable  = document.getElementById('geoTable');
+
+      svgPoints.innerHTML = '';
+      svgLines.innerHTML  = '';
+
+      // Serveur cible (AWS us-east-1 Virginia)
+      const target = latLonToSVG(37.5, -77.5);
+
+      attackers.forEach(att => {
+        if (!att.lat && !att.lon) return;
+        const pos     = latLonToSVG(att.lat, att.lon);
+        const color   = att.blocked ? '#ffaa00' : '#ff3366';
+        const shadow  = att.blocked ? '#ffaa00' : '#ff3366';
+        const radius  = Math.min(4 + att.count * 1.5, 16);
+
+        // Ligne de connexion attaquant → serveur
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', pos.x); line.setAttribute('y1', pos.y);
+        line.setAttribute('x2', target.x); line.setAttribute('y2', target.y);
+        line.setAttribute('stroke', color); line.setAttribute('stroke-width', '0.8');
+        line.setAttribute('stroke-opacity', '0.4'); line.setAttribute('stroke-dasharray', '4,4');
+        const animDash = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+        animDash.setAttribute('attributeName', 'stroke-dashoffset');
+        animDash.setAttribute('values', '0;-20'); animDash.setAttribute('dur', '1.5s');
+        animDash.setAttribute('repeatCount', 'indefinite');
+        line.appendChild(animDash);
+        svgLines.appendChild(line);
+
+        // Point attaquant
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', pos.x); circle.setAttribute('cy', pos.y);
+        circle.setAttribute('r', radius); circle.setAttribute('fill', color);
+        circle.setAttribute('filter', 'url(#glow)');
+        circle.setAttribute('style', 'cursor:pointer');
+        circle.setAttribute('title', `${att.flag} ${att.ip} — ${att.city}, ${att.country}`);
+
+        // Pulse animation
+        const pulse = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        pulse.setAttribute('cx', pos.x); pulse.setAttribute('cy', pos.y);
+        pulse.setAttribute('r', radius);
+        pulse.setAttribute('fill', 'none'); pulse.setAttribute('stroke', color);
+        pulse.setAttribute('stroke-width', '2');
+        const anim1 = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+        anim1.setAttribute('attributeName', 'r'); anim1.setAttribute('values', `${radius};${radius+8};${radius}`);
+        anim1.setAttribute('dur', '2s'); anim1.setAttribute('repeatCount', 'indefinite');
+        const anim2 = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+        anim2.setAttribute('attributeName', 'opacity'); anim2.setAttribute('values', '0.8;0;0.8');
+        anim2.setAttribute('dur', '2s'); anim2.setAttribute('repeatCount', 'indefinite');
+        pulse.appendChild(anim1); pulse.appendChild(anim2);
+
+        // Label IP
+        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        label.setAttribute('x', pos.x + radius + 3); label.setAttribute('y', pos.y + 4);
+        label.setAttribute('fill', '#b8d4e0'); label.setAttribute('font-size', '7');
+        label.setAttribute('font-family', 'monospace');
+        label.textContent = `${att.flag} ${att.ip}`;
+
+        g.appendChild(pulse); g.appendChild(circle); g.appendChild(label);
+        svgPoints.appendChild(g);
+      });
+
+      // Table géo sous la carte
+      if (attackers.length === 0) {
+        geoTable.innerHTML = '<div class="empty-state">Aucun attaquant géolocalisé — lancez une attaque de test pour voir les données</div>';
+      } else {
+        let html = `<table style="width:100%;border-collapse:collapse;font-size:10px">
+          <tr style="color:#00d4ff;border-bottom:1px solid #0e3a52">
+            <th style="text-align:left;padding:4px 8px">IP</th>
+            <th style="text-align:left;padding:4px 8px">Pays</th>
+            <th style="text-align:left;padding:4px 8px">Ville</th>
+            <th style="text-align:left;padding:4px 8px">ISP/Org</th>
+            <th style="text-align:center;padding:4px 8px">Attaques</th>
+            <th style="text-align:center;padding:4px 8px">Types</th>
+            <th style="text-align:center;padding:4px 8px">Statut</th>
+            <th style="text-align:center;padding:4px 8px">Action</th>
+          </tr>`;
+        attackers.forEach(att => {
+          const statusColor = att.blocked ? '#ffaa00' : '#ff3366';
+          const statusLabel = att.blocked ? '🚫 BLOQUÉ' : '🔴 ACTIF';
+          html += `<tr style="border-bottom:1px solid #0a1820;color:#b8d4e0">
+            <td style="padding:5px 8px;font-family:monospace;color:#00d4ff">${att.ip}</td>
+            <td style="padding:5px 8px">${att.flag} ${att.country}</td>
+            <td style="padding:5px 8px">${att.city}</td>
+            <td style="padding:5px 8px;color:#4a7a90">${(att.isp||att.org||'?').slice(0,30)}</td>
+            <td style="padding:5px 8px;text-align:center;color:#ff3366;font-weight:700">${att.count}</td>
+            <td style="padding:5px 8px;text-align:center;font-size:9px">${(att.types||[]).join(', ')}</td>
+            <td style="padding:5px 8px;text-align:center;color:${statusColor}">${statusLabel}</td>
+            <td style="padding:5px 8px;text-align:center">
+              ${!att.blocked ? `<button class="btn btn-danger" style="padding:2px 8px;font-size:9px" onclick="blockIP('${att.ip}')">🚫 BLOQUER</button>` : '<span style="color:#4a7a90;font-size:9px">bloqué</span>'}
+            </td>
+          </tr>`;
+        });
+        html += '</table>';
+        geoTable.innerHTML = html;
+      }
+    } catch(e) {
+      console.error('Map error:', e);
+    }
+  }
+
+  // ════════════════════════════════════════════════════
+  //  IPs BLOQUÉES
+  // ════════════════════════════════════════════════════
+
+  async function loadBlockedIPs() {
+    document.getElementById('blockedTs').textContent = new Date().toLocaleTimeString('fr-FR');
+    try {
+      const res  = await fetch('/api/soc/blocked-ips', { credentials: 'same-origin' });
+      const data = await res.json();
+      const list = document.getElementById('blockedIPsList');
+      if (!data.ok || !data.blocked.length) {
+        list.innerHTML = '<div class="empty-state">✅ Aucune IP bloquée pour le moment</div>';
+        return;
+      }
+      let html = `<table style="width:100%;border-collapse:collapse;font-size:11px">
+        <tr style="color:#00d4ff;border-bottom:1px solid #0e3a52">
+          <th style="text-align:left;padding:5px 8px">IP</th>
+          <th style="text-align:left;padding:5px 8px">Heure</th>
+          <th style="text-align:left;padding:5px 8px">Raison</th>
+          <th style="text-align:center;padding:5px 8px">Attaques</th>
+        </tr>`;
+      data.blocked.forEach(b => {
+        html += `<tr style="border-bottom:1px solid #0a1820;color:#ffaaaa;background:#1a0a0d">
+          <td style="padding:5px 8px;font-family:monospace;font-weight:700">🚫 ${b.ip}</td>
+          <td style="padding:5px 8px;color:#4a7a90">${b.time}</td>
+          <td style="padding:5px 8px">${b.reason}</td>
+          <td style="padding:5px 8px;text-align:center;color:#ff3366">${b.count}</td>
+        </tr>`;
+      });
+      html += '</table>';
+      list.innerHTML = html;
+    } catch(e) { console.error(e); }
+  }
+
+  async function blockIP(ip) {
+    if (!confirm(`Bloquer l'IP ${ip} dans AWS WAF ?`)) return;
+    try {
+      const res  = await fetch('/api/soc/block-ip', {
+        method: 'POST', credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ ip })
+      });
+      const data = await res.json();
+      showNotif(data.ok ? `🚫 IP ${ip} bloquée dans WAF` : `❌ Erreur: ${data.error}`, data.ok ? 'success' : 'error');
+      if (data.ok) { loadBlockedIPs(); loadAttackMap(); }
+    } catch(e) { showNotif('❌ Erreur réseau', 'error'); }
+  }
+
+  async function blockIPManual() {
+    const ip = document.getElementById('manualBlockIP').value.trim();
+    if (!ip) return showNotif('⚠️ Entrez une adresse IP', 'warn');
+    await blockIP(ip);
+    document.getElementById('manualBlockIP').value = '';
+  }
+
+  // ════════════════════════════════════════════════════
+  //  RAPPORT PDF
+  // ════════════════════════════════════════════════════
+
+  function downloadPDF() {
+    const status = document.getElementById('pdfDownloadStatus');
+    status.textContent = '⏳ Génération du PDF en cours...';
+    status.style.color = '#ffaa00';
+    const a = document.createElement('a');
+    a.href = '/api/soc/report/download';
+    a.download = '';
+    a.click();
+    setTimeout(() => {
+      status.textContent = '✅ Téléchargement lancé';
+      status.style.color = '#00ff88';
+    }, 1500);
+  }
+
+  async function sendPDFEmail() {
+    const status = document.getElementById('pdfEmailStatus');
+    status.textContent = '⏳ Génération et envoi en cours...';
+    status.style.color = '#ffaa00';
+    try {
+      const res  = await fetch('/api/soc/report/send', { method: 'POST', credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.ok) {
+        status.textContent = `✅ ${data.message}`;
+        status.style.color = '#00ff88';
+        showNotif('📧 Rapport PDF envoyé par email', 'success');
+      } else {
+        status.textContent = `❌ ${data.error}`;
+        status.style.color = '#ff3366';
+        showNotif(`❌ Erreur: ${data.error}`, 'error');
+      }
+    } catch(e) {
+      status.textContent = '❌ Erreur réseau';
+      status.style.color = '#ff3366';
+    }
+  }
+
+  // Helper notification (si pas déjà défini)
+  function showNotif(msg, type) {
+    const n = document.getElementById('notif');
+    if (!n) return;
+    n.textContent = msg;
+    n.className = 'notif show ' + (type || '');
+    setTimeout(() => n.className = 'notif', 3500);
+  }
+
+  // Auto-refresh de la carte et des IPs bloquées toutes les 30s
+  setInterval(loadAttackMap,   30000);
+  setInterval(loadBlockedIPs,  20000);
+
+  // Chargement initial
+  setTimeout(() => { loadAttackMap(); loadBlockedIPs(); }, 2000);
+
 </script>
 </body>
 </html>

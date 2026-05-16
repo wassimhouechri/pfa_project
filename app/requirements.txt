@@ -11,3 +11,4 @@ pytest-cov==4.1.0
 bandit==1.7.6
 safety==2.4.0b1
 gevent==23.9.1
+reportlab==4.2.0
