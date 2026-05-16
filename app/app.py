@@ -755,18 +755,42 @@ class RealtimeBroker:
     # ── collectors ────────────────────────────────────────
     def _collect_logs(self):
         try:
-            logs   = boto3.client("logs", region_name=AWS_REGION)
-            kwargs = dict(logGroupName=LOG_GROUP, limit=30, startFromHead=False)
-            if self._last_log_ts:
-                kwargs["startTime"] = self._last_log_ts + 1
-            else:
-                kwargs["startTime"] = int(
-                    (datetime.now(timezone.utc) - timedelta(minutes=5)).timestamp() * 1000
+            logs = boto3.client("logs", region_name=AWS_REGION)
+
+            # Premier appel : charger les 3 dernières heures pour avoir
+            # un historique visible dès la connexion SSE
+            if not self._last_log_ts:
+                start_ms = int(
+                    (datetime.now(timezone.utc) - timedelta(hours=3)).timestamp() * 1000
                 )
-            resp   = logs.filter_log_events(**kwargs)
-            events = sorted(resp.get("events", []), key=lambda e: e["timestamp"])
+            else:
+                start_ms = self._last_log_ts + 1
+
+            # Paginer pour récupérer TOUS les events (pas seulement 30)
+            all_events = []
+            next_token = None
+            while True:
+                kwargs = dict(
+                    logGroupName=LOG_GROUP,
+                    startTime=start_ms,
+                    limit=50,
+                )
+                if next_token:
+                    kwargs["nextToken"] = next_token
+                resp = logs.filter_log_events(**kwargs)
+                batch = resp.get("events", [])
+                all_events.extend(batch)
+                next_token = resp.get("nextToken")
+                # Arrêter la pagination après 200 events max pour ne pas bloquer
+                if not next_token or len(all_events) >= 200:
+                    break
+
+            events = sorted(all_events, key=lambda e: e["timestamp"])
+
             for e in events:
                 msg = e.get("message", "").strip()
+                if not msg:
+                    continue
                 if "ERROR" in msg or "error" in msg or "Exception" in msg:
                     level = "ERROR"
                 elif "WARN" in msg or "warn" in msg or "WARNING" in msg or "[ATTACK" in msg:
@@ -777,12 +801,14 @@ class RealtimeBroker:
                     e["timestamp"] / 1000, tz=timezone.utc
                 ).strftime("%H:%M:%S")
                 self._push("log", {
-                    "time": ts, "level": level,
-                    "msg": msg[:300], "id": e["eventId"]
+                    "time":  ts,
+                    "level": level,
+                    "msg":   msg[:300],
+                    "id":    e["eventId"],
                 })
                 self._last_log_ts = max(self._last_log_ts, e["timestamp"])
-        except Exception:
-            pass
+        except Exception as ex:
+            app.logger.error(f"[SSE] _collect_logs error: {ex}")
 
     def _collect_metrics(self):
         try:
