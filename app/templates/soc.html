@@ -1342,17 +1342,38 @@
           </button>
           <div id="pdfDownloadStatus" style="margin-top:8px;font-size:10px;color:#4a7a90"></div>
         </div>
-        <!-- Email via SES -->
-        <div style="flex:1;min-width:240px;background:#060f15;border:1px solid #0e3a52;border-radius:4px;padding:16px">
-          <div style="font-size:12px;color:#00d4ff;font-weight:700;margin-bottom:8px">📧 ENVOYER PAR EMAIL (AWS SES)</div>
-          <div style="font-size:10px;color:#4a7a90;margin-bottom:14px">
-            Envoie le rapport PDF automatiquement à l'adresse configurée via AWS SES.
-            <br><span style="color:#ffaa00">Requiert SES_FROM_EMAIL + SES_TO_EMAIL dans les variables d'environnement.</span>
+        <!-- Email via SNS -->
+        <div style="flex:2;min-width:300px;background:#060f15;border:1px solid #0e3a52;border-radius:4px;padding:16px">
+          <div style="font-size:12px;color:#00d4ff;font-weight:700;margin-bottom:8px">📧 ENVOYER RAPPORT COMPLET PAR EMAIL (AWS SNS)</div>
+          <div style="font-size:10px;color:#4a7a90;margin-bottom:12px">
+            Envoie un rapport de sécurité complet (attaques, IPs, statistiques) via AWS SNS.
+            <br><span style="color:#00ff88">✅ Fonctionne sur AWS Academy — pas besoin de SES.</span>
           </div>
-          <button class="btn btn-danger" style="width:100%;padding:10px" onclick="sendPDFEmail()">
-            📧 Envoyer le rapport par email
+          <!-- Destinataire -->
+          <div style="margin-bottom:8px">
+            <label style="font-size:10px;color:#00d4ff;display:block;margin-bottom:4px">📬 DESTINATAIRE (email)</label>
+            <input id="reportDestinataire" type="email" placeholder="exemple@gmail.com"
+              style="width:100%;background:#030a0e;border:1px solid #0e3a52;color:#b8d4e0;
+                     padding:7px 10px;font-family:monospace;font-size:11px;border-radius:3px">
+          </div>
+          <!-- Objet -->
+          <div style="margin-bottom:8px">
+            <label style="font-size:10px;color:#00d4ff;display:block;margin-bottom:4px">📝 OBJET</label>
+            <input id="reportObjet" type="text" placeholder="SOC Dashboard — Rapport de sécurité"
+              style="width:100%;background:#030a0e;border:1px solid #0e3a52;color:#b8d4e0;
+                     padding:7px 10px;font-family:monospace;font-size:11px;border-radius:3px">
+          </div>
+          <!-- Message additionnel -->
+          <div style="margin-bottom:12px">
+            <label style="font-size:10px;color:#00d4ff;display:block;margin-bottom:4px">💬 MESSAGE ADDITIONNEL (optionnel)</label>
+            <textarea id="reportMessage" rows="2" placeholder="Ajouter un commentaire..."
+              style="width:100%;background:#030a0e;border:1px solid #0e3a52;color:#b8d4e0;
+                     padding:7px 10px;font-family:monospace;font-size:11px;border-radius:3px;resize:vertical"></textarea>
+          </div>
+          <button class="btn btn-danger" style="width:100%;padding:10px;font-size:12px" onclick="sendRapportSNS()">
+            📧 Envoyer le rapport complet
           </button>
-          <div id="pdfEmailStatus" style="margin-top:8px;font-size:10px;color:#4a7a90"></div>
+          <div id="pdfEmailStatus" style="margin-top:8px;font-size:10px;color:#4a7a90;line-height:1.5"></div>
         </div>
       </div>
     </div>
