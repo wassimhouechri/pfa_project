@@ -292,6 +292,17 @@ ATTACK_META = {
 }
 
 
+# ── Middleware : bloquer les IPs blacklistées ─────────
+@app.before_request
+def enforce_ip_block():
+    """Bloque les IPs présentes dans _blocked_ips (sans AWS WAF)."""
+    ip = request.remote_addr
+    with _block_lock:
+        if ip in _blocked_ips:
+            app.logger.warning(f"[BLOCKED IP] Requête refusée — ip={ip} url={request.url[:200]}")
+            return jsonify({"error": "Votre adresse IP a été bloquée par le SOC Dashboard."}), 403
+
+
 # ── Middleware : analyse chaque requête ENTRANTE ──────
 @app.before_request
 def detect_attack_before():
@@ -1334,51 +1345,92 @@ def soc_report_download():
 @app.route("/api/soc/report/send", methods=["POST"])
 @login_required
 def soc_report_send():
-    """Génère le PDF et l'envoie par email via AWS SES."""
-    if not REPORTLAB_OK:
-        return jsonify({"ok": False, "error": "reportlab non installé"}), 500
-    if not SES_FROM_EMAIL or not SES_TO_EMAIL:
-        return jsonify({"ok": False, "error": "SES_FROM_EMAIL / SES_TO_EMAIL non configurés"}), 400
+    """
+    Envoie un résumé texte du rapport de sécurité via AWS SNS.
+    Compatible AWS Academy (pas besoin de SES).
+    Le rapport PDF complet est téléchargeable depuis le dashboard.
+    """
     try:
-        import email as email_lib
-        from email.mime.multipart import MIMEMultipart
-        from email.mime.base import MIMEBase
-        from email.mime.text import MIMEText
-        import base64
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-        pdf_bytes = _build_pdf_report()
-        now_str   = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-        filename  = f"soc_report_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.pdf"
+        # ── Résumé des attaques par type ──
+        attack_types: dict = {}
+        for a in _attack_tracker:
+            t = a["type"]
+            attack_types[t] = attack_types.get(t, 0) + 1
 
-        # Construire email MIME
-        msg = MIMEMultipart()
-        msg["Subject"] = f"📊 SOC Dashboard — Rapport de sécurité {now_str}"
-        msg["From"]    = SES_FROM_EMAIL
-        msg["To"]      = SES_TO_EMAIL
+        attack_lines = "\n".join(
+            f"  • {k}: {v} détection(s)" for k, v in attack_types.items()
+        ) or "  Aucune attaque détectée."
 
-        body = MIMEText(
-            f"Bonjour,\n\nVeuillez trouver en pièce jointe le rapport de sécurité SOC.\n\n"
-            f"Cluster : {ECS_CLUSTER}\nService : {ECS_SERVICE}\nGénéré  : {now_str}\n\n"
-            f"Total attaques : {len(_attack_tracker)}\nIPs bloquées   : {len(_blocked_ips)}\n\n"
-            f"--\nDevSecOps SOC Dashboard", "plain"
+        unique_ips = list({a["ip"] for a in _attack_tracker})
+
+        # ── IPs bloquées ──
+        with _block_lock:
+            blocked_lines = "\n".join(
+                f"  🚫 {b['ip']} — {b['reason']} (bloquée à {b['time']})"
+                for b in _blocked_ips.values()
+            ) or "  Aucune IP bloquée."
+
+        # ── Brute force ──
+        brute_lines = "\n".join(
+            f"  ⚡ {ip} — {data['count']} tentatives"
+            for ip, data in _brute_force_tracker.items()
+            if data["count"] >= BRUTE_FORCE_THRESHOLD
+        ) or "  Aucun brute force détecté."
+
+        message = (
+            f"{'='*60}\n"
+            f"📊  RAPPORT SOC — {now_str}\n"
+            f"{'='*60}\n\n"
+            f"🖥️  Cluster  : {ECS_CLUSTER}\n"
+            f"⚙️  Service  : {ECS_SERVICE}\n"
+            f"👤  Opérateur: {session.get('username', 'inconnu')}\n\n"
+            f"{'─'*60}\n"
+            f"📋  RÉSUMÉ EXÉCUTIF\n"
+            f"{'─'*60}\n"
+            f"  Total attaques détectées : {len(_attack_tracker)}\n"
+            f"  IPs sources uniques      : {len(unique_ips)}\n"
+            f"  IPs bloquées (WAF/Flask) : {len(_blocked_ips)}\n"
+            f"  Accès refusés (401/403)  : {sum(d.get('count', 0) for d in _brute_force_tracker.values())}\n\n"
+            f"{'─'*60}\n"
+            f"⚡  ATTAQUES PAR TYPE\n"
+            f"{'─'*60}\n"
+            f"{attack_lines}\n\n"
+            f"{'─'*60}\n"
+            f"🚫  IPs BLOQUÉES\n"
+            f"{'─'*60}\n"
+            f"{blocked_lines}\n\n"
+            f"{'─'*60}\n"
+            f"🔐  BRUTE FORCE DÉTECTÉ\n"
+            f"{'─'*60}\n"
+            f"{brute_lines}\n\n"
+            f"{'─'*60}\n"
+            f"📄  RAPPORT PDF COMPLET\n"
+            f"{'─'*60}\n"
+            f"  Téléchargez le rapport PDF depuis le SOC Dashboard\n"
+            f"  → Bouton \"📄 Télécharger PDF maintenant\"\n\n"
+            f"{'='*60}\n"
+            f"DevSecOps SOC Dashboard — Rapport confidentiel\n"
+            f"{'='*60}\n"
         )
-        msg.attach(body)
 
-        attachment = MIMEBase("application", "pdf")
-        attachment.set_payload(pdf_bytes)
-        from email import encoders
-        encoders.encode_base64(attachment)
-        attachment.add_header("Content-Disposition", f"attachment; filename={filename}")
-        msg.attach(attachment)
-
-        ses = boto3.client("ses", region_name=AWS_REGION)
-        ses.send_raw_email(
-            Source=SES_FROM_EMAIL,
-            Destinations=[SES_TO_EMAIL],
-            RawMessage={"Data": msg.as_bytes()},
+        sns = boto3.client("sns", region_name=AWS_REGION)
+        sns.publish(
+            TopicArn=SNS_TOPIC_ARN,
+            Subject=f"📊 SOC Dashboard — Rapport de sécurité {now_str}",
+            Message=message,
         )
-        app.logger.info(f"[SOC REPORT] PDF envoyé à {SES_TO_EMAIL}")
-        return jsonify({"ok": True, "message": f"Rapport PDF envoyé à {SES_TO_EMAIL}"})
+        app.logger.info(f"[SOC REPORT] Résumé envoyé via SNS topic {SNS_TOPIC_ARN}")
+        return jsonify({
+            "ok": True,
+            "message": "Résumé du rapport envoyé via SNS (email aux abonnés du topic)."
+        })
+    except NoCredentialsError:
+        return jsonify({"ok": False, "error": "Pas de credentials AWS (IAM Role manquant)"}), 403
+    except ClientError as ex:
+        code = ex.response["Error"]["Code"]
+        return jsonify({"ok": False, "error": f"AWS ClientError: {code}"}), 500
     except Exception as ex:
         return jsonify({"ok": False, "error": str(ex)}), 500
 
