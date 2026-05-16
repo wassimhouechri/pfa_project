@@ -27,4 +27,4 @@ USER appuser
 EXPOSE 5000
 
 # Commande de démarrage avec vérification
-CMD ["sh", "-c", "echo 'Starting Gunicorn...' && gunicorn --bind 0.0.0.0:5000 --workers 2 --threads 2 --timeout 60 --access-logfile - --error-logfile - app:app"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:5000 --worker-class gevent --workers 1 --timeout 120 --access-logfile - --error-logfile - app:app"]

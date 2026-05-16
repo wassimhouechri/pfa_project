@@ -1228,7 +1228,7 @@
 <footer class="footer">
   <span>SOC Dashboard v3.0 · DevSecOps · Flask + AWS boto3</span>
   <span id="footerRefresh">Dernière mise à jour: —</span>
-  <span>Polling: 10s logs · 30s métriques/alarmes</span>
+  <span>🔴 LIVE SSE · Logs 3s · Métriques 10s · Alarmes 15s</span>
 </footer>
 
 <!-- NOTIFICATION -->
@@ -1239,556 +1239,226 @@
 
 <script>
 // ═══════════════════════════════════════════════════════════
-//  SOC Dashboard v3.0
-//  Tous les appels AWS passent par le backend Flask (boto3)
-//  Routes utilisées :
-//    GET  /api/soc/logs      → CloudWatch Logs
-//    GET  /api/soc/metrics   → CloudWatch Metrics (CPU, Mem)
-//    GET  /api/soc/alarms    → CloudWatch Alarms
-//    POST /api/soc/test-alert → SNS publish
+//  SOC Dashboard v4.0 — FULL REALTIME SSE
+//  Un seul flux SSE /api/soc/stream pousse tous les canaux :
+//    log | metrics | alarms | attacks | ping
 // ═══════════════════════════════════════════════════════════
 
 // ─── État global ───────────────────────────────────────────
-let logEntries    = [];
-let chartData     = [];
-let chartLabels   = [];
+let logEntries  = [];
+let chartData   = [];
+let chartLabels = [];
+let _seenLogIds = new Set();
+let _sseSource  = null;
+let _reconnectTimer = null;
 
-// Intervalles de polling (métriques / alarmes)
-const POLL_METRICS = 15000;   // 15s
-const POLL_ALARMS  = 15000;   // 15s
+// Compteurs live (incrémentaux depuis connexion SSE)
+let _liveErrors  = 0;
+let _liveUnauth  = 0;
+let _liveReqs    = 0;
 
-let metricsTimer = null;
-let alarmsTimer  = null;
-let countdownTimer = null;
-let nextRefreshAt  = 0;
-
-// SSE — logs temps réel
-let _sseSource   = null;
-let _sseSeenIds  = new Set();
-
-// ─── Utilitaire fetch avec gestion session ─────────────────
-async function apiFetch(url, options = {}) {
-  const res = await fetch(url, {
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    ...options
-  });
-
-  // Session expirée → afficher overlay
-  if (res.status === 401) {
-    const data = await res.json().catch(() => ({}));
-    if (data.error === 'session_expired') {
-      document.getElementById('sessionOverlay').classList.add('show');
-      throw new Error('session_expired');
-    }
-    // Redirect classique
-    window.location.href = '/login';
-    throw new Error('not_authenticated');
-  }
-
-  return res;
-}
-
-// ─── Dot d'état polling ────────────────────────────────────
-function setDot(id, state) {
-  const el = document.getElementById(id);
-  el.className = 'poll-dot ' + state;
-}
-
-// ─── Statut global header ──────────────────────────────────
-function setStatus(ok, text) {
-  const badge = document.getElementById('statusBadge');
-  const status = document.getElementById('systemStatus');
-  status.textContent = text;
-  badge.classList.toggle('error-state', !ok);
-}
-
-// ═══════════════════════════════════════════════════════════
-// LOGS SSE — connexion temps réel
-// ═══════════════════════════════════════════════════════════
+// ─── SSE — connexion principale ────────────────────────────
 function connectSSE() {
   if (_sseSource) { _sseSource.close(); _sseSource = null; }
+  if (_reconnectTimer) { clearTimeout(_reconnectTimer); _reconnectTimer = null; }
 
   setDot('pollDotLogs', 'active');
-  const es = new EventSource('/api/soc/logs/stream', { withCredentials: true });
+  setDot('pollDotMetrics', 'active');
+  setDot('pollDotAlarms', 'active');
+
+  const es = new EventSource('/api/soc/stream', { withCredentials: true });
   _sseSource = es;
 
   es.onopen = () => {
-    setDot('pollDotLogs', 'ok');
-    appendSystemLog('🟢 SSE connecté — logs temps réel actifs', 'INFO');
+    setStatus(true, 'LIVE');
+    appendSystemLog('🟢 SSE connecté — tous les flux temps réel actifs', 'INFO');
+    document.getElementById('pollStatus').textContent = '🔴 LIVE';
+    document.getElementById('nextRefreshLabel').textContent = 'Temps réel SSE actif';
+    // Animer la barre en continu
+    animateLiveBar();
   };
 
   es.onmessage = (ev) => {
-    let payload;
-    try { payload = JSON.parse(ev.data); } catch(e) { return; }
-    if (payload === '__ping__') return;   // heartbeat
+    let pkt;
+    try { pkt = JSON.parse(ev.data); } catch(e) { return; }
+    const { chan, data } = pkt;
 
-    // Déduplication
-    if (_sseSeenIds.has(payload.id)) return;
-    _sseSeenIds.add(payload.id);
-    if (_sseSeenIds.size > 500) {
-      const arr = [..._sseSeenIds];
-      _sseSeenIds = new Set(arr.slice(arr.length - 300));
-    }
-
-    // Ajouter dans le tableau interne et render
-    logEntries.push(payload);
-    if (logEntries.length > 200) logEntries = logEntries.slice(-200);
-
-    // KPI live
-    if (payload.level === 'ERROR') {
-      const cur = parseInt(document.getElementById('kpiErrorsVal').textContent) || 0;
-      setKpi('kpiErrors','kpiErrorsVal','kpiErrorsSub', cur+1, 'Depuis connexion', cur+1 > 0);
-    }
-    if (/401|403|unauthorized|forbidden/i.test(payload.msg)) {
-      const cur = parseInt(document.getElementById('kpiUnauthVal').textContent) || 0;
-      setKpi('kpiUnauth','kpiUnauthVal','kpiUnauthSub', cur+1, '401+403 détectés', cur+1 > 5);
-    }
-    if (/\b(200|201|204|GET|POST|PUT|DELETE)\b/.test(payload.msg)) {
-      const cur = parseInt(document.getElementById('kpiRequestsVal').textContent) || 0;
-      setKpi('kpiRequests','kpiRequestsVal','kpiRequestsSub', cur+1, 'Requêtes totales', false);
-    }
-
-    // Attaque ?
-    if (/401|403/g.test(payload.msg)) {
-      const unauthCount = parseInt(document.getElementById('kpiUnauthVal').textContent) || 0;
-      if (unauthCount > 10) triggerAttackDetection(`${unauthCount} accès refusés — possible force brute !`);
-    }
-
-    renderLogs();
-    document.getElementById('logsTs').textContent = new Date().toLocaleTimeString('fr-FR');
-    setDot('pollDotLogs', 'ok');
+    if (chan === 'ping')    return;
+    if (chan === 'log')     handleLog(data);
+    if (chan === 'metrics') handleMetrics(data);
+    if (chan === 'alarms')  handleAlarms(data);
+    if (chan === 'attacks') handleAttacks(data);
   };
 
   es.onerror = () => {
     setDot('pollDotLogs', 'error');
+    setDot('pollDotMetrics', 'error');
+    setDot('pollDotAlarms', 'error');
+    setStatus(false, 'RECONNEXION...');
     es.close();
     _sseSource = null;
-    appendSystemLog('⚠️ SSE déconnecté — reconnexion dans 5s…', 'WARN');
-    setTimeout(connectSSE, 5000);
+    appendSystemLog('⚠️ SSE perdu — reconnexion dans 4s...', 'WARN');
+    _reconnectTimer = setTimeout(connectSSE, 4000);
   };
 }
 
-// Garde fetchLogs pour le bouton RELOAD manuel
-async function fetchLogs() {
-  connectSSE();
-}
-  setDot('pollDotLogs', 'active');
-  try {
-    const res  = await apiFetch('/api/soc/logs');
-    const data = await res.json();
-
-    if (!data.ok) {
-      appendSystemLog('⚠️ Logs: ' + data.error, 'WARN');
-      setDot('pollDotLogs', 'error');
-      return;
-    }
-
-    const events = data.events || [];
-
-    // Compter erreurs et accès refusés
-    let errors = 0, unauth = 0, requests = 0;
-    events.forEach(ev => {
-      if (ev.level === 'ERROR') errors++;
-      if (/401|403|unauthorized|forbidden/i.test(ev.msg)) unauth++;
-      if (/\b(200|201|204|GET|POST|PUT|DELETE)\b/.test(ev.msg)) requests++;
-    });
-
-    // Détection attaque
-    if (unauth > 10) triggerAttackDetection(`${unauth} accès refusés — possible attaque par force brute !`);
-    if (errors > 20) triggerAttackDetection(`${errors} erreurs ECS — service potentiellement compromis !`);
-
-    // ── ATTACK INTELLIGENCE ──
-    const counts = { unauth, errors, requests, totalErrors: errors };
-    const detected = analyzeAttack(events, counts);
-    updateAttackIntelPanel(detected, new Date());
-
-    // KPIs logs
-    setKpi('kpiErrors', 'kpiErrorsVal', 'kpiErrorsSub', errors, 'Dernière heure', errors > 0);
-    setKpi('kpiUnauth', 'kpiUnauthVal', 'kpiUnauthSub', unauth, '401 + 403 détectés', unauth > 5);
-    setKpi('kpiRequests', 'kpiRequestsVal', 'kpiRequestsSub', requests, 'Requêtes totales', false);
-
-    // Render logs
-    const logsEl = document.getElementById('fullLogs');
-    if (!events.length) {
-      logsEl.innerHTML = '<div class="empty-state">Aucun log trouvé dans la fenêtre temporelle.</div>';
-    } else {
-      logEntries = events;
-      renderLogs();
-    }
-
-    document.getElementById('logsTs').textContent = new Date().toLocaleTimeString('fr-FR');
-    setDot('pollDotLogs', 'ok');
-
-  } catch(e) {
-    if (e.message !== 'session_expired') {
-      appendSystemLog('❌ Erreur logs: ' + e.message, 'ERROR');
-      setDot('pollDotLogs', 'error');
-    }
+// ─── Barre de progression "LIVE" ───────────────────────────
+let _liveBarFrame = null;
+function animateLiveBar() {
+  if (_liveBarFrame) cancelAnimationFrame(_liveBarFrame);
+  const fill = document.getElementById('pollProgressFill');
+  let t0 = performance.now();
+  const PERIOD = 3000; // même période que LOG_INTERVAL backend
+  function step(now) {
+    const pct = ((now - t0) % PERIOD) / PERIOD * 100;
+    fill.style.width = pct + '%';
+    _liveBarFrame = requestAnimationFrame(step);
   }
+  _liveBarFrame = requestAnimationFrame(step);
 }
 
-// ═══════════════════════════════════════════════════════════
-// FETCH METRICS  →  GET /api/soc/metrics
-// ═══════════════════════════════════════════════════════════
-async function fetchMetrics() {
-  setDot('pollDotMetrics', 'active');
-  try {
-    const res  = await apiFetch('/api/soc/metrics');
-    const data = await res.json();
+// ─── Handlers par canal ────────────────────────────────────
 
-    if (!data.ok) {
-      appendSystemLog('⚠️ Métriques: ' + data.error, 'WARN');
-      setDot('pollDotMetrics', 'error');
-      return;
-    }
-
-    const cpu    = data.cpu  ?? 0;
-    const mem    = data.mem  ?? 0;
-    const errors = data.errors ?? 0;
-    const unauth = data.unauth ?? 0;
-
-    // KPI CPU
-    setKpi('kpiCPU', 'kpiCPUVal', 'kpiCPUSub', cpu + '%', 'Service ECS', cpu > 80);
-    setKpi('kpiMem', 'kpiMemVal', 'kpiMemSub', mem + '%', 'Cluster ECS', mem > 85);
-
-    if (mem > 85) triggerAttackDetection(`Mémoire ECS critique: ${mem}% !`);
-
-    // Barres de métriques
-    const barsEl = document.getElementById('metricBars');
-    barsEl.innerHTML = `
-      ${renderBar('CPU ECS', cpu + '%', cpu, cpu > 80)}
-      ${renderBar('Mémoire ECS', mem + '%', mem, mem > 80)}
-      ${errors > 0 ? renderBar('Erreurs (custom)', errors, Math.min(errors, 100), true) : ''}
-      ${unauth > 0 ? renderBar('Accès refusés', unauth, Math.min(unauth, 100), true) : ''}
-    `;
-
-    // Mettre à jour le graphique avec l'historique CPU
-    chartData   = [...chartData, cpu].slice(-12);
-    chartLabels = [...chartLabels, new Date().toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'})].slice(-12);
-    drawChart();
-
-    document.getElementById('metricsTs').textContent = new Date().toLocaleTimeString('fr-FR');
-    setDot('pollDotMetrics', 'ok');
-
-  } catch(e) {
-    if (e.message !== 'session_expired') {
-      appendSystemLog('❌ Erreur métriques: ' + e.message, 'ERROR');
-      setDot('pollDotMetrics', 'error');
-    }
+function handleLog(e) {
+  // Déduplication
+  if (_seenLogIds.has(e.id)) return;
+  _seenLogIds.add(e.id);
+  if (_seenLogIds.size > 1000) {
+    const arr = [..._seenLogIds];
+    _seenLogIds = new Set(arr.slice(-500));
   }
+
+  // Buffer
+  logEntries.push(e);
+  if (logEntries.length > 300) logEntries = logEntries.slice(-300);
+
+  // KPI live incrémental
+  if (e.level === 'ERROR') {
+    _liveErrors++;
+    setKpi('kpiErrors','kpiErrorsVal','kpiErrorsSub', _liveErrors, 'Depuis connexion', _liveErrors > 0);
+  }
+  if (/401|403|unauthorized|forbidden/i.test(e.msg)) {
+    _liveUnauth++;
+    setKpi('kpiUnauth','kpiUnauthVal','kpiUnauthSub', _liveUnauth, '401+403 détectés', _liveUnauth > 5);
+    if (_liveUnauth > 10) triggerAttackDetection(`${_liveUnauth} accès refusés — force brute possible !`);
+  }
+  if (/\b(200|201|204|GET|POST|PUT|DELETE)\b/.test(e.msg)) {
+    _liveReqs++;
+    setKpi('kpiRequests','kpiRequestsVal','kpiRequestsSub', _liveReqs, 'Requêtes temps réel', false);
+  }
+
+  // Render log
+  renderOneLog(e);
+  document.getElementById('logsTs').textContent = new Date().toLocaleTimeString('fr-FR');
+  setDot('pollDotLogs', 'ok');
 }
 
-// ═══════════════════════════════════════════════════════════
-// FETCH ALARMS  →  GET /api/soc/alarms
-// ═══════════════════════════════════════════════════════════
-async function fetchAlarms() {
-  setDot('pollDotAlarms', 'active');
-  try {
-    const res  = await apiFetch('/api/soc/alarms');
-    const data = await res.json();
+function handleMetrics(d) {
+  const cpu    = d.cpu  ?? 0;
+  const mem    = d.mem  ?? 0;
+  const errors = d.errors ?? 0;
+  const unauth = d.unauth ?? 0;
 
-    if (!data.ok) {
-      appendSystemLog('⚠️ Alarmes: ' + data.error, 'WARN');
-      setDot('pollDotAlarms', 'error');
-      return;
-    }
+  setKpi('kpiCPU', 'kpiCPUVal', 'kpiCPUSub', cpu + '%', 'Service ECS', cpu > 80);
+  setKpi('kpiMem', 'kpiMemVal', 'kpiMemSub', mem + '%', 'Cluster ECS', mem > 85);
 
-    const alarms       = data.alarms || [];
-    const activeAlarms = alarms.filter(a => a.state === 'ALARM');
+  if (mem > 85) triggerAttackDetection(`Mémoire ECS critique: ${mem}% !`);
 
-    // KPI alarmes
-    setKpi('kpiAlarms', 'kpiAlarmsVal', 'kpiAlarmsSub', activeAlarms.length,
-      `${alarms.length} alarmes configurées`, activeAlarms.length > 0);
+  const barsEl = document.getElementById('metricBars');
+  barsEl.innerHTML =
+    renderBar('CPU ECS',    cpu + '%',    cpu,    cpu > 80) +
+    renderBar('Mémoire ECS', mem + '%',   mem,    mem > 80) +
+    (errors > 0 ? renderBar('Erreurs (custom)', errors, Math.min(errors,100), true) : '') +
+    (unauth > 0 ? renderBar('Accès refusés',    unauth, Math.min(unauth,100), true) : '');
 
-    if (activeAlarms.length > 0) {
-      triggerAttackDetection(`${activeAlarms.length} alarme(s) CloudWatch en état ALARM !`);
-    }
+  chartData   = [...chartData,   cpu].slice(-20);
+  chartLabels = [...chartLabels, new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})].slice(-20);
+  drawChart();
 
-    // Render
-    const el = document.getElementById('alarmsList');
-    if (!alarms.length) {
-      el.innerHTML = '<div class="empty-state">Aucune alarme trouvée.</div>';
-    } else {
-      el.innerHTML = alarms.map(a => `
-        <div class="alarm-item">
-          <div class="alarm-dot ${a.state}"></div>
-          <div class="alarm-info">
-            <div class="alarm-name">${escHtml(a.name)}</div>
-            <div class="alarm-desc">${escHtml(a.desc || a.reason || '—')}</div>
-          </div>
-          <div class="alarm-state ${a.state}">${a.state}</div>
+  document.getElementById('metricsTs').textContent = d.ts || new Date().toLocaleTimeString('fr-FR');
+  setDot('pollDotMetrics', 'ok');
+}
+
+function handleAlarms(d) {
+  const alarms = d.alarms || [];
+  const alList = document.getElementById('alarmsList');
+  const active = alarms.filter(a => a.state === 'ALARM').length;
+
+  setKpi('kpiAlarms','kpiAlarmsVal','kpiAlarmsSub',
+    active, active > 0 ? '⚠️ Alarmes actives !' : 'Toutes OK', active > 0);
+
+  if (!alarms.length) {
+    alList.innerHTML = '<div class="empty-state">Aucune alarme configurée.</div>';
+  } else {
+    alList.innerHTML = alarms.map(a => {
+      const cls = a.state === 'ALARM' ? 'alarm-item alarm-active'
+               : a.state === 'OK'    ? 'alarm-item alarm-ok'
+               :                       'alarm-item alarm-insufficient';
+      const icon = a.state === 'ALARM' ? '🔴' : a.state === 'OK' ? '🟢' : '⚫';
+      return `<div class="${cls}">
+        <div class="alarm-header">
+          <span class="alarm-name">${icon} ${escHtml(a.name)}</span>
+          <span class="alarm-state ${a.state}">${a.state}</span>
         </div>
-      `).join('');
-    }
+        ${a.desc   ? `<div class="alarm-desc">${escHtml(a.desc)}</div>` : ''}
+        ${a.reason ? `<div class="alarm-reason">${escHtml(a.reason.slice(0,120))}</div>` : ''}
+      </div>`;
+    }).join('');
+    if (active > 0) triggerAttackDetection(`${active} alarme(s) CloudWatch en état ALARM !`);
+  }
 
-    document.getElementById('alarmsTs').textContent = new Date().toLocaleTimeString('fr-FR');
-    setDot('pollDotAlarms', 'ok');
+  document.getElementById('alarmsTs').textContent = d.ts || new Date().toLocaleTimeString('fr-FR');
+  setDot('pollDotAlarms', 'ok');
+}
 
-  } catch(e) {
-    if (e.message !== 'session_expired') {
-      appendSystemLog('❌ Erreur alarmes: ' + e.message, 'ERROR');
-      setDot('pollDotAlarms', 'error');
-    }
+function handleAttacks(d) {
+  const allAttacks  = d.all_attacks  || [];
+  const summary     = d.summary      || [];
+  const bruteForce  = d.brute_force  || [];
+
+  // Fusionner brute force dans summary
+  const allSummary = [...summary, ...bruteForce.filter(b =>
+    !summary.find(s => s.type === 'Brute Force')
+  )];
+
+  const total = allAttacks.length;
+  document.getElementById('attackCountBadge').textContent = total + ' détectées';
+  document.getElementById('attackIntelTs').textContent = d.ts || '--';
+
+  if (total > 0) {
+    const last = allAttacks[allAttacks.length - 1];
+    updateAttackIntelPanel([last], new Date());
+  }
+
+  // Historique
+  const histEl = document.getElementById('attackHistoryList');
+  if (!allAttacks.length) {
+    histEl.innerHTML = '<div class="empty-state" style="padding:20px 0;font-size:11px">Aucune attaque enregistrée.</div>';
+  } else {
+    histEl.innerHTML = [...allAttacks].reverse().slice(0, 15).map(a => `
+      <div class="attack-history-item">
+        <span class="attack-history-type">${escHtml(a.type)}</span>
+        <span class="attack-history-ip">${escHtml(a.ip)}</span>
+        <span class="attack-history-time">${escHtml(a.time)}</span>
+      </div>`).join('');
   }
 }
 
-// ═══════════════════════════════════════════════════════════
-// TEST ALERT  →  POST /api/soc/test-alert
-// ═══════════════════════════════════════════════════════════
-async function sendTestAlert() {
-  const btn = document.getElementById('testBtn');
-  btn.disabled = true;
-  btn.textContent = '⏳ ENVOI...';
+// ─── Render logs ───────────────────────────────────────────
+function renderOneLog(e) {
+  const logsEl = document.getElementById('fullLogs');
+  // Vider le placeholder si présent
+  const placeholder = logsEl.querySelector('.empty-state');
+  if (placeholder) placeholder.remove();
 
-  try {
-    const res  = await apiFetch('/api/soc/test-alert', { method: 'POST' });
-    const data = await res.json();
+  const div = document.createElement('div');
+  div.className = `log-entry ${e.level}`;
+  div.innerHTML = `<span class="log-ts">[${e.time}]</span><span class="log-level ${e.level}">${e.level}</span><span class="log-msg">${escHtml(e.msg)}</span>`;
+  logsEl.appendChild(div);
 
-    if (data.ok) {
-      showNotif('success-notif', '✅ Alerte envoyée', data.message || 'Alerte SNS publiée.');
-      triggerAttackDetection('TEST — Alerte SOC simulée. Vérifiez votre email.');
-      appendSystemLog('🚨 TEST ALERTE envoyée depuis SOC Dashboard', 'ERROR');
-    } else {
-      showNotif('danger-notif', '❌ Erreur', data.error || 'Erreur inconnue.');
-    }
-  } catch(e) {
-    if (e.message !== 'session_expired') {
-      showNotif('danger-notif', '❌ Erreur réseau', e.message.slice(0, 100));
-    }
-  }
-
-  btn.disabled = false;
-  btn.textContent = '🚨 TEST ALERTE';
-}
-
-// ═══════════════════════════════════════════════════════════
-// REFRESH ALL
-// ═══════════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════
-// FETCH ATTACK STATS  →  GET /api/soc/attack-stats
-// Route Flask directe — retourne tous les types d'attaques
-// ═══════════════════════════════════════════════════════════
-
-// Garde en mémoire les clés déjà vues pour éviter le spam
-const _seenBruteKeys = {};
-const _seenAttackKeys = {};
-
-async function fetchAttackStats() {
-  try {
-    const res  = await apiFetch('/api/soc/attack-stats');
-    const data = await res.json();
-    if (!data.ok) return;
-
-    const bruteList   = data.brute_force || [];
-    const allAttacks  = data.all_attacks  || [];
-    const summary     = data.summary      || [];
-
-    // ── 1. Brute Force depuis le tracker IP ──────────────
-    if (bruteList.length > 0) {
-      const worst = bruteList.reduce((a, b) => a.count > b.count ? a : b);
-      const detected = {
-        name: 'Brute Force / Credential Stuffing',
-        icon: '🔐',
-        severity: 'critical',
-        confidence: 95,
-        description: `${worst.count} tentatives échouées depuis IP ${worst.ip}. Première: ${worst.first_seen} — Dernière: ${worst.last_seen}`,
-        recommendation: 'Bloquer l\'IP source, activer MFA, renforcer le rate limiting.'
-      };
-      _forceUpdateAttackPanel(detected);
-
-      const key = `${worst.ip}-${Math.floor(worst.count / 5)}`;
-      if (!_seenBruteKeys[key]) {
-        _seenBruteKeys[key] = true;
-        addToAttackHistory(detected, new Date());
-        appendSystemLog(`🚨 [BRUTE FORCE] IP: ${worst.ip} — ${worst.count} tentatives détectées`, 'ERROR');
-        autoSendAttackAlert(detected);
-      }
-    }
-
-    // ── 2. Toutes les autres attaques détectées par Flask ─
-    const SEVERITY_MAP = {
-      'SQL Injection':          { icon: '💉', severity: 'high',     confidence: 88 },
-      'XSS':                    { icon: '🕷️', severity: 'high',     confidence: 85 },
-      'Path Traversal / LFI':   { icon: '📂', severity: 'high',     confidence: 87 },
-      'Command Injection / RCE':{ icon: '💻', severity: 'critical', confidence: 92 },
-      'Scanner / Reconnaissance':{ icon: '🔍', severity: 'medium',  confidence: 75 },
-      'Brute Force':            { icon: '🔐', severity: 'critical', confidence: 95 },
-    };
-
-    // Traiter le résumé par type pour mettre à jour le panneau Attack Intel
-    // (on prend le type avec la sévérité la plus haute, hors Brute Force déjà traité)
-    const NON_BRUTE = summary.filter(s => s.type !== 'Brute Force');
-    if (NON_BRUTE.length > 0 && bruteList.length === 0) {
-      // Prioriser par sévérité : CRITICAL > HIGH > MEDIUM
-      const sevOrder = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1 };
-      const topAttack = NON_BRUTE.sort(
-        (a, b) => (sevOrder[b.severity] || 0) - (sevOrder[a.severity] || 0)
-      )[0];
-
-      const meta = SEVERITY_MAP[topAttack.type] || { icon: '⚠️', severity: 'medium', confidence: 75 };
-      const detected = {
-        name:           topAttack.type,
-        icon:           meta.icon,
-        severity:       topAttack.severity.toLowerCase(),
-        confidence:     topAttack.confidence || meta.confidence,
-        description:    `${topAttack.count} occurrence(s) détectée(s). Dernière IP: ${topAttack.last_ip} à ${topAttack.last_time}.`,
-        recommendation: getRecommendation(topAttack.type),
-      };
-      _forceUpdateAttackPanel(detected);
-    }
-
-    // ── 3. Nouvelles attaques dans all_attacks → historique ─
-    allAttacks.forEach(entry => {
-      const key = `${entry.type}-${entry.ip}-${entry.time}`;
-      if (!_seenAttackKeys[key]) {
-        _seenAttackKeys[key] = true;
-        const meta = SEVERITY_MAP[entry.type] || { icon: '⚠️', severity: 'medium', confidence: 75 };
-        const histEntry = {
-          name:       entry.type,
-          icon:       meta.icon,
-          severity:   (entry.severity || 'MEDIUM').toLowerCase(),
-          confidence: entry.confidence || meta.confidence,
-          time:       entry.time,
-        };
-        addToAttackHistory(histEntry, entry.time);
-        appendSystemLog(
-          `🚨 [${entry.severity || 'MEDIUM'}] ${entry.type} — IP: ${entry.ip} — ${entry.detail}`,
-          entry.severity === 'CRITICAL' || entry.severity === 'HIGH' ? 'ERROR' : 'WARN'
-        );
-
-        // Auto-email si sévérité haute
-        if (['CRITICAL','HIGH'].includes(entry.severity)) {
-          const alertObj = {
-            name:           entry.type,
-            severity:       (entry.severity || 'MEDIUM').toLowerCase(),
-            confidence:     entry.confidence || meta.confidence,
-            description:    `Attaque détectée depuis IP ${entry.ip}. Détail: ${entry.detail}`,
-            recommendation: getRecommendation(entry.type),
-          };
-          autoSendAttackAlert(alertObj);
-        }
-      }
-    });
-
-    // ── 4. Si aucune attaque → effacer le panneau ─────────
-    if (bruteList.length === 0 && NON_BRUTE.length === 0) {
-      updateAttackIntelPanel(null, new Date());
-    }
-
-  } catch(e) {
-    if (e.message !== 'session_expired') {
-      console.warn('fetchAttackStats error:', e.message);
-    }
-  }
-}
-
-// Retourne la recommandation selon le type d'attaque
-function getRecommendation(attackType) {
-  const recs = {
-    'SQL Injection':           'Vérifier les paramètres non sanitisés, activer WAF SQL rules, auditer les requêtes DB.',
-    'XSS':                     'Activer Content-Security-Policy, valider et encoder toutes les entrées utilisateur.',
-    'Path Traversal / LFI':    'Valider les chemins d\'accès, restreindre les permissions fichiers, activer chroot.',
-    'Command Injection / RCE': 'Désactiver l\'exécution de commandes, valider toutes les entrées, isoler le conteneur.',
-    'Scanner / Reconnaissance':'Bloquer les user-agents suspects, surveiller les logs d\'accès, activer l\'IDS.',
-    'Brute Force':             'Bloquer l\'IP source, activer MFA, renforcer le rate limiting.',
-  };
-  return recs[attackType] || 'Analyser les logs manuellement et contacter l\'équipe sécurité.';
-}
-
-// Met à jour UNIQUEMENT le panneau Type d'Attaque (sans toucher l'historique)
-function _forceUpdateAttackPanel(detected) {
-  const panel    = document.getElementById('attackIntelPanel');
-  const badge    = document.getElementById('attackTypeBadge');
-  const desc     = document.getElementById('attackTypeDesc');
-  const sevFill  = document.getElementById('severityFill');
-  const sevVal   = document.getElementById('severityVal');
-  const confFill = document.getElementById('confidenceFill');
-  const confVal  = document.getElementById('confidenceVal');
-
-  panel.classList.add('has-attack');
-  badge.className   = 'attack-type-badge active';
-  badge.textContent = `${detected.icon} ${detected.name}`;
-  desc.textContent  = detected.description;
-
-  sevFill.className  = 'severity-fill critical';
-  sevVal.className   = 'severity-val critical';
-  sevVal.textContent = 'CRITIQUE';
-
-  confFill.style.width      = '95%';
-  confFill.style.background = 'var(--danger)';
-  confVal.textContent       = '95%';
-  confVal.style.color       = 'var(--danger)';
-
-  currentAttack = detected;
-}
-
-async function refreshAll() {
-  const btn = document.getElementById('refreshBtn');
-  btn.disabled = true;
-  btn.textContent = '⏳ CHARGEMENT...';
-
-  document.getElementById('pollStatus').textContent = 'Rafraîchissement...';
-
-  try {
-    await Promise.all([fetchMetrics(), fetchAlarms(), fetchAttackStats()]);
-    connectSSE(); // reconnecter SSE si besoin
-    const ts = new Date().toLocaleTimeString('fr-FR');
-    document.getElementById('footerRefresh').textContent = `Dernière mise à jour: ${ts}`;
-    document.getElementById('pollStatus').textContent = 'Données à jour ✓';
-    setStatus(true, 'SYSTÈME ACTIF');
-  } catch(e) {
-    if (e.message !== 'session_expired') {
-      setStatus(false, 'ERREUR CONNEXION');
-      document.getElementById('pollStatus').textContent = 'Erreur de connexion';
-    }
-  }
-
-  btn.disabled = false;
-  btn.textContent = '🔄 REFRESH';
-}
-
-// ═══════════════════════════════════════════════════════════
-// POLLING AUTOMATIQUE
-// ═══════════════════════════════════════════════════════════
-function startPolling() {
-  // Logs : SSE temps réel (pas de setInterval)
-  connectSSE();
-
-  // Métriques : toutes les 15s
-  metricsTimer = setInterval(fetchMetrics, POLL_METRICS);
-
-  // Alarmes : toutes les 15s
-  alarmsTimer = setInterval(fetchAlarms, POLL_ALARMS);
-
-  // Attack stats Flask : toutes les 10s
-  setInterval(fetchAttackStats, 10000);
-
-  // Countdown visuel pour métriques (15s)
-  nextRefreshAt = Date.now() + POLL_METRICS;
-  countdownTimer = setInterval(() => {
-    const remaining = Math.max(0, Math.ceil((nextRefreshAt - Date.now()) / 1000));
-    document.getElementById('nextRefreshLabel').textContent = `Métriques dans: ${remaining}s`;
-    const pct = 100 - (remaining / (POLL_METRICS / 1000)) * 100;
-    document.getElementById('pollProgressFill').style.width = pct + '%';
-    if (remaining === 0) nextRefreshAt = Date.now() + POLL_METRICS;
-  }, 500);
-}
-
-// ═══════════════════════════════════════════════════════════
-// HELPERS UI
-// ═══════════════════════════════════════════════════════════
-
-function setKpi(cardId, valId, subId, value, sub, isDanger) {
-  const valEl = document.getElementById(valId);
-  const subEl = document.getElementById(subId);
-  const card  = document.getElementById(cardId);
-
-  valEl.textContent = value;
-  valEl.classList.remove('kpi-loading');
-  if (subEl) subEl.textContent = sub;
-  if (isDanger) card.classList.add('danger');
-  else card.classList.remove('danger');
+  // Garder max 300 entrées DOM
+  while (logsEl.children.length > 300) logsEl.removeChild(logsEl.firstChild);
+  logsEl.scrollTop = logsEl.scrollHeight;
 }
 
 function renderLogs() {
@@ -1798,24 +1468,67 @@ function renderLogs() {
       <span class="log-ts">[${e.time}]</span>
       <span class="log-level ${e.level}">${e.level}</span>
       <span class="log-msg">${escHtml(e.msg)}</span>
-    </div>
-  `).join('');
+    </div>`).join('');
   logsEl.scrollTop = logsEl.scrollHeight;
 }
 
-function appendSystemLog(msg, level = 'INFO') {
+// ─── refreshAll — force reconnexion SSE ────────────────────
+async function refreshAll() {
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ ...';
+  _liveErrors = 0; _liveUnauth = 0; _liveReqs = 0;
+  connectSSE();
+  setTimeout(() => { btn.disabled = false; btn.textContent = '🔄 REFRESH'; }, 2000);
+}
+
+// ─── Logs manuel clear / reload ────────────────────────────
+function clearLogs() {
+  logEntries = [];
+  _seenLogIds = new Set();
+  document.getElementById('fullLogs').innerHTML = '<div class="empty-state">Logs vidés — en attente du prochain événement SSE...</div>';
+}
+
+function fetchLogs() { connectSSE(); }
+
+// ─── startPolling — appelé au démarrage ────────────────────
+function startPolling() {
+  connectSSE();
+}
+
+// ─── Utilitaires UI ────────────────────────────────────────
+function setDot(id, state) {
+  const el = document.getElementById(id);
+  if (el) el.className = 'poll-dot ' + state;
+}
+
+function setStatus(ok, text) {
+  const badge  = document.getElementById('statusBadge');
+  const status = document.getElementById('systemStatus');
+  if (status) status.textContent = text;
+  if (badge)  badge.classList.toggle('error-state', !ok);
+}
+
+function setKpi(cardId, valId, subId, value, sub, isDanger) {
+  const valEl = document.getElementById(valId);
+  const subEl = document.getElementById(subId);
+  const card  = document.getElementById(cardId);
+  if (valEl) { valEl.textContent = value; valEl.classList.remove('kpi-loading'); }
+  if (subEl) subEl.textContent = sub;
+  if (card)  card.classList.toggle('danger', isDanger);
+}
+
+function appendSystemLog(msg, level='INFO') {
   const logsEl = document.getElementById('fullLogs');
-  const ts = new Date().toLocaleTimeString('fr-FR');
+  if (!logsEl) return;
+  const placeholder = logsEl.querySelector('.empty-state');
+  if (placeholder) placeholder.remove();
+  const ts  = new Date().toLocaleTimeString('fr-FR');
   const div = document.createElement('div');
   div.className = `log-entry ${level}`;
   div.innerHTML = `<span class="log-ts">[${ts}]</span><span class="log-level ${level}">${level}</span><span class="log-msg">${escHtml(msg)}</span>`;
   logsEl.appendChild(div);
   logsEl.scrollTop = logsEl.scrollHeight;
-}
-
-function clearLogs() {
-  logEntries = [];
-  document.getElementById('fullLogs').innerHTML = '<div class="empty-state">Logs vidés. En attente du prochain cycle de polling...</div>';
 }
 
 function renderBar(label, displayVal, pct, isWarn) {
@@ -1827,473 +1540,176 @@ function renderBar(label, displayVal, pct, isWarn) {
         <span>${displayVal}</span>
       </div>
       <div class="metric-bar-track">
-        <div class="metric-bar-fill ${isWarn ? 'warn-bar' : ''}" style="width:${fillPct}%"></div>
+        <div class="metric-bar-fill ${isWarn ? 'warn' : ''}" style="width:${fillPct}%"></div>
       </div>
-    </div>
-  `;
-}
-
-function triggerAttackDetection(detail) {
-  const banner = document.getElementById('attackBanner');
-  document.getElementById('attackDetail').textContent = detail;
-  banner.classList.add('active');
-  showNotif('danger-notif', '🚨 ATTAQUE DÉTECTÉE', detail);
-  setTimeout(() => banner.classList.remove('active'), 30000);
+    </div>`;
 }
 
 function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ═══════════════════════════════════════════════════════════
-// CHART (Canvas — historique CPU temps réel)
-// ═══════════════════════════════════════════════════════════
+function triggerAttackDetection(msg) {
+  const banner = document.getElementById('attackBanner');
+  const detail = document.getElementById('attackDetail');
+  if (banner && detail) {
+    detail.textContent = msg;
+    banner.classList.add('active');
+    setTimeout(() => banner.classList.remove('active'), 8000);
+  }
+}
+
+function clearAttackHistory() {
+  document.getElementById('attackHistoryList').innerHTML =
+    '<div class="empty-state" style="padding:20px 0;font-size:11px">Historique vidé.</div>';
+  document.getElementById('attackCountBadge').textContent = '0 détectées';
+}
+
+// ─── Chart CPU ─────────────────────────────────────────────
 function drawChart() {
   const canvas = document.getElementById('activityChart');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  canvas.width  = canvas.offsetWidth;
-  canvas.height = canvas.offsetHeight;
+  const W = canvas.width  = canvas.offsetWidth;
+  const H = canvas.height = canvas.offsetHeight || 80;
+  ctx.clearRect(0, 0, W, H);
 
-  const w = canvas.width, h = canvas.height;
-  const pad = { top: 10, right: 10, bottom: 25, left: 35 };
-  const iw = w - pad.left - pad.right;
-  const ih = h - pad.top  - pad.bottom;
+  if (chartData.length < 2) return;
 
-  ctx.clearRect(0, 0, w, h);
-  if (chartData.length < 2) {
-    ctx.fillStyle = 'rgba(74,122,144,0.4)';
-    ctx.font = '11px Share Tech Mono';
-    ctx.textAlign = 'center';
-    ctx.fillText('En attente de données...', w / 2, h / 2);
-    return;
-  }
+  const max   = Math.max(...chartData, 1);
+  const pts   = chartData.map((v, i) => ({
+    x: (i / (chartData.length - 1)) * W,
+    y: H - (v / max) * (H - 10) - 4
+  }));
 
-  const maxVal = Math.max(...chartData, 1);
-
-  // Grille
-  ctx.strokeStyle = 'rgba(14,58,82,0.5)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = pad.top + ih - (i / 4) * ih;
-    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + iw, y); ctx.stroke();
-    ctx.fillStyle = 'rgba(74,122,144,0.7)';
-    ctx.font = '9px Share Tech Mono';
-    ctx.textAlign = 'right';
-    ctx.fillText(((i / 4) * maxVal).toFixed(0) + '%', pad.left - 4, y + 3);
-  }
-
-  // Gradient fill
-  const grad = ctx.createLinearGradient(0, pad.top, 0, pad.top + ih);
-  grad.addColorStop(0, 'rgba(0,212,255,0.3)');
-  grad.addColorStop(1, 'rgba(0,212,255,0)');
-
+  // Fill
   ctx.beginPath();
-  chartData.forEach((v, i) => {
-    const x = pad.left + (i / (chartData.length - 1)) * iw;
-    const y = pad.top  + ih - (v / maxVal) * ih;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
-  ctx.lineTo(pad.left + iw, pad.top + ih);
-  ctx.lineTo(pad.left,       pad.top + ih);
+  ctx.moveTo(pts[0].x, H);
+  pts.forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.lineTo(pts[pts.length-1].x, H);
   ctx.closePath();
-  ctx.fillStyle = grad;
+  ctx.fillStyle = 'rgba(0,212,255,0.10)';
   ctx.fill();
 
-  // Ligne
+  // Line
   ctx.beginPath();
+  ctx.moveTo(pts[0].x, pts[0].y);
+  pts.forEach(p => ctx.lineTo(p.x, p.y));
   ctx.strokeStyle = '#00d4ff';
-  ctx.lineWidth = 2;
-  ctx.shadowColor = '#00d4ff';
-  ctx.shadowBlur = 4;
-  chartData.forEach((v, i) => {
-    const x = pad.left + (i / (chartData.length - 1)) * iw;
-    const y = pad.top  + ih - (v / maxVal) * ih;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
+  ctx.lineWidth = 1.5;
   ctx.stroke();
-  ctx.shadowBlur = 0;
 
-  // Labels X
-  ctx.fillStyle = 'rgba(74,122,144,0.7)';
-  ctx.font = '8px Share Tech Mono';
-  ctx.textAlign = 'center';
-  const step = Math.max(1, Math.floor(chartLabels.length / 5));
-  chartLabels.forEach((lbl, i) => {
-    if (i % step === 0) {
-      const x = pad.left + (i / (chartLabels.length - 1)) * iw;
-      ctx.fillText(lbl, x, pad.top + ih + 15);
-    }
-  });
+  // Labels
+  ctx.fillStyle = '#4a7a90';
+  ctx.font = '9px monospace';
+  if (chartLabels.length) {
+    ctx.fillText(chartLabels[0], 2, H - 2);
+    ctx.fillText(chartLabels[chartLabels.length-1], W - 55, H - 2);
+  }
 }
 
-// ═══════════════════════════════════════════════════════════
-// ATTACK INTELLIGENCE ENGINE
-// ═══════════════════════════════════════════════════════════
-
-// Dictionnaire des signatures d'attaques
-// Les patterns matchent à la fois les logs CloudWatch et les messages Flask [ATTACK DETECTED]
-const ATTACK_SIGNATURES = [
-  {
-    name: 'Brute Force / Credential Stuffing',
-    icon: '🔐',
-    severity: 'critical',
-    confidence: 95,
-    description: 'Tentatives répétées de connexion échouées. Attaque par force brute détectée sur les endpoints d\'authentification.',
-    patterns: [
-      /401|403|unauthorized|forbidden|login.failed|invalid.creden/i,
-      /\[ATTACK DETECTED\].*type=Brute Force/i,
-      /\[LOGIN FAILED\]/i,
-    ],
-    threshold: (counts) => counts.unauth > 10,
-    recommendation: 'Bloquer l\'IP source, activer MFA, renforcer le rate limiting.'
-  },
-  {
-    name: 'DDoS / Flood Attack',
-    icon: '🌊',
-    severity: 'critical',
-    confidence: 90,
-    description: 'Volume anormal de requêtes détecté. Le service est potentiellement submergé par un flood malveillant.',
-    patterns: [/too.many.requests|rate.limit|429|connection.reset|timeout/i],
-    threshold: (counts) => counts.requests > 500 || counts.totalErrors > 30,
-    recommendation: 'Activer AWS WAF, augmenter les règles de rate limiting, contacter le support AWS.'
-  },
-  {
-    name: 'SQL Injection',
-    icon: '💉',
-    severity: 'high',
-    confidence: 88,
-    description: 'Tentatives d\'injection SQL détectées dans les requêtes. Possible exfiltration ou altération de données.',
-    patterns: [
-      /sql.inject|union.select|drop.table|1=1|or.1=1|'--|%27|xp_|exec\(|cast\(/i,
-      /\[ATTACK DETECTED\].*type=SQL Injection/i,
-    ],
-    threshold: null,
-    recommendation: 'Vérifier les paramètres non sanitisés, activer WAF SQL rules, auditer les requêtes DB.'
-  },
-  {
-    name: 'XSS (Cross-Site Scripting)',
-    icon: '🕷️',
-    severity: 'high',
-    confidence: 85,
-    description: 'Injection de scripts malveillants détectée. Possible vol de session ou exécution de code côté client.',
-    patterns: [
-      /<script|javascript:|onerror=|onload=|alert\(|%3Cscript|xss/i,
-      /\[ATTACK DETECTED\].*type=XSS/i,
-    ],
-    threshold: null,
-    recommendation: 'Activer Content-Security-Policy, valider et encoder toutes les entrées utilisateur.'
-  },
-  {
-    name: 'Path Traversal / LFI',
-    icon: '📂',
-    severity: 'high',
-    confidence: 87,
-    description: 'Tentatives d\'accès à des fichiers système détectées. L\'attaquant tente de lire des fichiers sensibles.',
-    patterns: [
-      /\.\.\//i, /\/etc\/passwd|\/etc\/shadow|\.\.\\|%2e%2e/i,
-      /\[ATTACK DETECTED\].*type=Path Traversal/i,
-    ],
-    threshold: null,
-    recommendation: 'Valider les chemins d\'accès, restreindre les permissions fichiers, activer chroot.'
-  },
-  {
-    name: 'Command Injection / RCE',
-    icon: '💻',
-    severity: 'critical',
-    confidence: 92,
-    description: 'Tentative d\'exécution de commandes système à distance. Risque d\'exécution de code arbitraire.',
-    patterns: [
-      /;.*(ls|cat|id|whoami|uname|ping|curl|wget)|`.*`|\$\(.*\)|cmd=|exec=|system\(/i,
-      /\[ATTACK DETECTED\].*type=Command Injection/i,
-    ],
-    threshold: null,
-    recommendation: 'Désactiver l\'exécution de commandes, valider toutes les entrées, isoler le conteneur.'
-  },
-  {
-    name: 'Scanner / Reconnaissance',
-    icon: '🔍',
-    severity: 'medium',
-    confidence: 75,
-    description: 'Scan de ports ou d\'endpoints détecté. Un attaquant cartographie votre infrastructure.',
-    patterns: [
-      /nikto|nmap|sqlmap|burpsuite|nessus|masscan|zgrab|dirbuster|gobuster/i,
-      /\[ATTACK DETECTED\].*type=Scanner/i,
-    ],
-    threshold: null,
-    recommendation: 'Bloquer les user-agents suspects, surveiller les logs d\'accès, activer l\'IDS.'
-  },
-  {
-    name: 'Service Crash / Resource Exhaustion',
-    icon: '💥',
-    severity: 'high',
-    confidence: 80,
-    description: 'Crashs ou erreurs répétés du service ECS. L\'application est potentiellement déstabilisée.',
-    patterns: [/out.of.memory|oom.kill|container.stopped|task.stopped|crashed|exit.code/i],
-    threshold: (counts) => counts.totalErrors > 20,
-    recommendation: 'Vérifier les ressources ECS, augmenter les limites mémoire, analyser les core dumps.'
-  },
-  {
-    name: 'Unauthorized API Access',
-    icon: '🔑',
-    severity: 'medium',
-    confidence: 78,
-    description: 'Accès non autorisé aux endpoints API. Possible tentative de contournement des contrôles d\'accès.',
-    patterns: [/api.key.invalid|token.expired|jwt.invalid|bearer.invalid|hmac.failed/i],
-    threshold: (counts) => counts.unauth > 5,
-    recommendation: 'Révoquer les tokens compromis, renforcer la validation JWT, auditer les permissions API.'
-  }
-];
-
-// État de l'intelligence d'attaque
-let attackHistory      = [];
-let attackEmailCount   = 0;
-let currentAttack      = null;
-let lastAlertSentAt    = 0;
-const ALERT_COOLDOWN   = 60000; // 1 min entre deux emails auto
-
-// Analyser les logs et métriques pour détecter le type d'attaque
-function analyzeAttack(logEvents, counts) {
-  const allLogText = logEvents.map(e => e.msg || '').join('\n');
-  let detected = null;
-  let maxConfidence = 0;
-
-  for (const sig of ATTACK_SIGNATURES) {
-    // Vérifier les patterns de texte dans les logs
-    const patternMatch = sig.patterns.some(p => p.test(allLogText));
-    // Vérifier les seuils numériques
-    const thresholdMatch = sig.threshold ? sig.threshold(counts) : false;
-
-    if (patternMatch || thresholdMatch) {
-      const score = sig.confidence + (patternMatch && thresholdMatch ? 5 : 0);
-      if (score > maxConfidence) {
-        maxConfidence = score;
-        detected = { ...sig, confidence: Math.min(99, score) };
-      }
-    }
-  }
-
-  return detected;
-}
-
-// Mettre à jour le panneau Attack Intelligence
-function updateAttackIntelPanel(detected, timestamp) {
-  const panel     = document.getElementById('attackIntelPanel');
-  const badge     = document.getElementById('attackTypeBadge');
-  const desc      = document.getElementById('attackTypeDesc');
-  const sevFill   = document.getElementById('severityFill');
-  const sevVal    = document.getElementById('severityVal');
-  const confFill  = document.getElementById('confidenceFill');
-  const confVal   = document.getElementById('confidenceVal');
-  const ts        = document.getElementById('attackIntelTs');
-
-  ts.textContent = new Date().toLocaleTimeString('fr-FR');
-
-  if (!detected) {
-    panel.classList.remove('has-attack');
-    badge.className = 'attack-type-badge none';
-    badge.textContent = '✅ AUCUNE MENACE';
-    desc.textContent  = 'Surveillance active. Aucune activité malveillante détectée.';
-    sevFill.className = 'severity-fill low';
-    sevVal.className  = 'severity-val low';
-    sevVal.textContent = 'FAIBLE';
-    confFill.style.width = '0%';
-    confFill.style.background = 'var(--green)';
-    confVal.textContent = '—';
-    confVal.style.color = 'var(--textdim)';
-    currentAttack = null;
-    return;
-  }
-
-  panel.classList.add('has-attack');
-  badge.className = 'attack-type-badge active';
-  badge.textContent = `${detected.icon} ${detected.name}`;
-  desc.textContent  = detected.description;
-
-  // Sévérité
-  const sevMap = {
-    low: { cls: 'low', label: 'FAIBLE' },
-    medium: { cls: 'medium', label: 'MOYENNE' },
-    high: { cls: 'high', label: 'ÉLEVÉE' },
-    critical: { cls: 'critical', label: 'CRITIQUE' }
+// ─── Attack intel panel (existing logic kept) ──────────────
+function updateAttackIntelPanel(detected, ts) {
+  if (!detected || !detected.length) return;
+  const atk  = detected[0];
+  const meta = {
+    "SQL Injection":         { severity:"HIGH",     confidence:88, badge:"SQL INJECTION",    cls:"sql",     desc:"Tentatives d'injection SQL détectées dans les paramètres." },
+    "XSS":                   { severity:"HIGH",     confidence:85, badge:"XSS",              cls:"xss",     desc:"Injection de scripts malveillants détectée. Risque de vol de session." },
+    "Path Traversal / LFI":  { severity:"HIGH",     confidence:87, badge:"PATH TRAVERSAL",   cls:"path",    desc:"Tentatives d'accès à des fichiers système sensibles." },
+    "Command Injection / RCE":{ severity:"CRITICAL", confidence:92, badge:"RCE / CMD INJECT", cls:"rce",     desc:"Tentative d'exécution de commandes système à distance." },
+    "Scanner / Reconnaissance":{ severity:"MEDIUM",  confidence:75, badge:"SCANNER DÉTECTÉ",  cls:"scanner", desc:"User-agent de scanner malveillant détecté." },
+    "Brute Force":           { severity:"CRITICAL", confidence:95, badge:"BRUTE FORCE",      cls:"brute",   desc:"Tentatives répétées de connexion depuis la même IP." },
   };
-  const sev = sevMap[detected.severity] || sevMap.medium;
-  sevFill.className = `severity-fill ${sev.cls}`;
-  sevVal.className  = `severity-val ${sev.cls}`;
-  sevVal.textContent = sev.label;
+  const m = meta[atk.type] || { severity:"MEDIUM", confidence:75, badge:atk.type, cls:"", desc:"Activité suspecte." };
+  const badge  = document.getElementById('attackTypeBadge');
+  const desc   = document.getElementById('attackTypeDesc');
+  const sfill  = document.getElementById('severityFill');
+  const sval   = document.getElementById('severityVal');
+  const cfill  = document.getElementById('confidenceFill');
+  const cval   = document.getElementById('confidenceVal');
 
-  // Confiance
-  const confColor = detected.confidence > 85 ? 'var(--danger)' : detected.confidence > 70 ? 'var(--warn)' : 'var(--green)';
-  confFill.style.width = detected.confidence + '%';
-  confFill.style.background = confColor;
-  confVal.textContent = detected.confidence + '%';
-  confVal.style.color = confColor;
+  if (badge) { badge.className = `attack-type-badge ${m.cls}`; badge.textContent = `🚨 ${m.badge}`; }
+  if (desc)  desc.textContent = m.desc + ` | IP: ${atk.ip} | ${atk.time||''}`;
 
-  // Stocker et historiser si c'est une nouvelle attaque
-  if (!currentAttack || currentAttack.name !== detected.name) {
-    currentAttack = detected;
-    addToAttackHistory(detected, timestamp || new Date());
+  const sevPct = { CRITICAL:100, HIGH:75, MEDIUM:50, LOW:25 }[m.severity] || 50;
+  if (sfill) { sfill.className = `severity-fill ${m.severity.toLowerCase()}`; sfill.style.width = sevPct+'%'; }
+  if (sval)  { sval.className = `severity-val ${m.severity.toLowerCase()}`; sval.textContent = m.severity; }
+  if (cfill) cfill.style.width = m.confidence + '%';
+  if (cval)  cval.textContent  = m.confidence + '%';
 
-    // Envoyer email automatiquement
-    autoSendAttackAlert(detected);
-  }
+  triggerAttackDetection(`${m.badge} — IP ${atk.ip} — Confiance ${m.confidence}%`);
 }
 
-// Ajouter à l'historique
-function addToAttackHistory(attack, timestamp) {
-  const entry = {
-    name: attack.name,
-    icon: attack.icon,
-    severity: attack.severity,
-    time: timestamp instanceof Date ? timestamp.toLocaleTimeString('fr-FR') : timestamp,
-    confidence: attack.confidence
-  };
-  attackHistory.unshift(entry);
-  if (attackHistory.length > 20) attackHistory.pop();
-
-  // Mettre à jour le badge compteur
-  document.getElementById('attackCountBadge').textContent = `${attackHistory.length} détectées`;
-
-  renderAttackHistory();
-}
-
-// Afficher l'historique
-function renderAttackHistory() {
-  const el = document.getElementById('attackHistoryList');
-  if (!attackHistory.length) {
-    el.innerHTML = '<div class="empty-state" style="padding:20px 0;font-size:11px">Aucune attaque enregistrée.</div>';
-    return;
-  }
-  el.innerHTML = attackHistory.map(e => `
-    <div class="attack-hist-item">
-      <div class="attack-hist-dot ${e.severity}"></div>
-      <div class="attack-hist-info">
-        <div class="attack-hist-type">${e.icon} ${e.name}</div>
-        <div class="attack-hist-time">${e.time} · Confiance: ${e.confidence}%</div>
-      </div>
-      <div class="attack-hist-sev ${e.severity}">${e.severity.toUpperCase()}</div>
-    </div>
-  `).join('');
-}
-
-// Vider l'historique
-function clearAttackHistory() {
-  attackHistory = [];
-  currentAttack = null;
-  document.getElementById('attackCountBadge').textContent = '0 détectées';
-  renderAttackHistory();
-  updateAttackIntelPanel(null);
-}
-
-// Envoyer un email automatique quand attaque détectée
-async function autoSendAttackAlert(attack) {
-  const now = Date.now();
-  if (now - lastAlertSentAt < ALERT_COOLDOWN) return; // cooldown
-  lastAlertSentAt = now;
-
-  setMailStatus('sending', `Envoi alerte: ${attack.name}...`);
-
+// ─── Alerts SNS ────────────────────────────────────────────
+async function sendTestAlert() {
+  const btn = document.getElementById('testBtn');
+  btn.disabled = true; btn.textContent = '📤 Envoi...';
   try {
-    const res = await apiFetch('/api/soc/attack-alert', {
-      method: 'POST',
+    const res  = await fetch('/api/soc/test-alert', { method:'POST', credentials:'same-origin' });
+    const data = await res.json();
+    showNotif(data.ok ? 'Alerte SNS envoyée ✅' : '❌ ' + data.error, data.ok ? 'ok' : 'err');
+  } catch(e) {
+    showNotif('❌ Erreur réseau: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '🚨 TEST ALERTE';
+  }
+}
+
+async function sendAttackAlertManual() {
+  const btn = document.getElementById('manualAlertBtn');
+  btn.disabled = true; btn.textContent = '📤 Envoi...';
+  try {
+    const res  = await fetch('/api/soc/attack-alert', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
-        attack_name: attack.name,
-        severity: attack.severity,
-        confidence: attack.confidence,
-        description: attack.description,
-        recommendation: attack.recommendation
+        attack_name:'Alerte Manuelle', severity:'HIGH', confidence:100,
+        description:'Alerte envoyée manuellement depuis le SOC Dashboard.',
+        recommendation:'Vérifier les logs et investiguer.',
       })
     });
     const data = await res.json();
-
     if (data.ok) {
-      attackEmailCount++;
-      document.getElementById('emailSentCount').textContent = attackEmailCount;
-      setMailStatus('sent', `✅ Email envoyé: ${attack.name}`);
-      setTimeout(() => setMailStatus('idle', 'En attente d\'activité...'), 10000);
-      showNotif('danger-notif', `🚨 ${attack.icon} ${attack.name}`, `Alerte email envoyée ! Sévérité: ${attack.severity.toUpperCase()}`);
-    } else {
-      setMailStatus('idle', '⚠️ Erreur envoi: ' + (data.error || 'Inconnue'));
+      const cnt = document.getElementById('emailSentCount');
+      if (cnt) cnt.textContent = parseInt(cnt.textContent||0) + 1;
+      const ms  = document.getElementById('mailStatus');
+      if (ms) { ms.className = 'mail-status sent'; ms.querySelector('#mailStatusText').textContent = 'Email envoyé !'; }
     }
+    showNotif(data.ok ? '📧 Alerte manuelle envoyée' : '❌ ' + data.error, data.ok ? 'ok' : 'err');
   } catch(e) {
-    if (e.message !== 'session_expired') {
-      setMailStatus('idle', '❌ Erreur réseau');
-    }
+    showNotif('❌ ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '📧 ENVOYER ALERTE MANUELLE';
   }
 }
 
-// Alerte manuelle
-async function sendAttackAlertManual() {
-  const btn = document.getElementById('manualAlertBtn');
-  btn.disabled = true;
-  btn.textContent = '⏳ ENVOI EN COURS...';
-
-  const attack = currentAttack || {
-    name: 'Alerte Manuelle SOC',
-    severity: 'medium',
-    confidence: 100,
-    description: 'Alerte manuelle déclenchée par l\'opérateur SOC.',
-    recommendation: 'Vérifier les logs et les métriques manuellement.',
-    icon: '⚠️'
-  };
-
-  await autoSendAttackAlert(attack);
-  lastAlertSentAt = 0; // reset cooldown pour manuel
-
-  btn.disabled = false;
-  btn.textContent = '📧 ENVOYER ALERTE MANUELLE';
+function showNotif(msg, type) {
+  const n  = document.getElementById('notif');
+  const nm = document.getElementById('notifMsg');
+  if (!n || !nm) return;
+  nm.textContent = msg;
+  n.className = 'notif show ' + (type === 'ok' ? 'notif-ok' : 'notif-err');
+  setTimeout(() => n.className = 'notif', 4000);
 }
 
-// Mettre à jour l'état de l'envoi mail
-function setMailStatus(state, text) {
-  const el = document.getElementById('mailStatus');
-  const icons = { sending: '📤', sent: '📬', idle: '📭' };
-  el.className = `mail-status ${state}`;
-  el.innerHTML = `<span class="mail-icon">${icons[state] || '📭'}</span><span id="mailStatusText">${text}</span>`;
-}
-
-
-let notifTimer;
-function showNotif(cls, title, msg) {
-  const el      = document.getElementById('notif');
-  const titleEl = document.getElementById('notifTitle');
-  const msgEl   = document.getElementById('notifMsg');
-
-  el.className      = 'notif';
-  titleEl.className = 'notif-title';
-
-  titleEl.textContent = title;
-  msgEl.textContent   = msg;
-
-  el.classList.add(cls);
-  titleEl.classList.add(cls);
-  el.classList.add('show');
-
-  if (notifTimer) clearTimeout(notifTimer);
-  notifTimer = setTimeout(() => el.classList.remove('show'), 5000);
-}
-
-// ═══════════════════════════════════════════════════════════
-// HORLOGE
-// ═══════════════════════════════════════════════════════════
+// ─── Horloge ───────────────────────────────────────────────
 function updateClock() {
-  document.getElementById('headerTime').textContent =
-    new Date().toLocaleDateString('fr-FR') + ' · ' + new Date().toLocaleTimeString('fr-FR');
+  const el = document.getElementById('headerTime');
+  if (el) el.textContent = new Date().toLocaleTimeString('fr-FR', {hour12:false});
 }
 setInterval(updateClock, 1000);
 updateClock();
 
-// ═══════════════════════════════════════════════════════════
-// INIT
-// ═══════════════════════════════════════════════════════════
-window.addEventListener('resize', drawChart);
+// ─── INIT ──────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  setInterval(drawChart, 2000);
+  startPolling();
+});
 
-// Lancement initial
-document.addEventListener('DOMContentLoaded', () => {
-  setStatus(true, 'CONNEXION...');
-  refreshAll().then(() => {
-    startPolling();
-  });
+window.addEventListener('beforeunload', () => {
+  if (_sseSource) _sseSource.close();
 });
 </script>
 </body>

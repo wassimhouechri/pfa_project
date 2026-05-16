@@ -699,20 +699,37 @@ def soc_attack_stats():
 
 
 # ══════════════════════════════════════════════════════
-#  SSE — LOGS EN TEMPS RÉEL (Server-Sent Events)
+#  SSE REALTIME ENGINE — tous les flux en un seul stream
 # ══════════════════════════════════════════════════════
 
-class LogBroker:
-    """Diffuse les nouveaux logs CloudWatch à tous les clients SSE connectés."""
+class RealtimeBroker:
+    """
+    Thread de fond unique qui collecte toutes les données AWS
+    et les diffuse à tous les clients SSE connectés.
+    
+    Canaux émis :
+      {"chan":"log",     "data": {time, level, msg, id}}
+      {"chan":"metrics", "data": {cpu, mem, errors, unauth}}
+      {"chan":"alarms",  "data": [{name, state, desc, reason}, ...]}
+      {"chan":"attacks", "data": {brute_force, all_attacks, summary}}
+      {"chan":"ping",    "data": null}
+    """
+
+    LOG_INTERVAL     = 3    # s — nouveaux logs CloudWatch
+    METRICS_INTERVAL = 10   # s — CPU/Mem CloudWatch Metrics
+    ALARMS_INTERVAL  = 15   # s — CloudWatch Alarms
+    ATTACKS_INTERVAL = 5    # s — attack tracker en mémoire Flask
+    PING_INTERVAL    = 20   # s — keepalive
 
     def __init__(self):
         self._clients: list[queue.Queue] = []
-        self._lock = threading.Lock()
-        self._last_ingestion_time = 0  # timestamp ms du dernier event vu
+        self._lock   = threading.Lock()
         self._started = False
+        self._last_log_ts = 0   # ms du dernier event CloudWatch vu
 
+    # ── subscription ──────────────────────────────────────
     def subscribe(self) -> queue.Queue:
-        q: queue.Queue = queue.Queue(maxsize=100)
+        q: queue.Queue = queue.Queue(maxsize=200)
         with self._lock:
             self._clients.append(q)
         return q
@@ -722,105 +739,218 @@ class LogBroker:
             if q in self._clients:
                 self._clients.remove(q)
 
-    def _broadcast(self, event: dict):
-        data = "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
+    # ── broadcast ─────────────────────────────────────────
+    def _push(self, chan: str, data):
+        payload = "data: " + json.dumps({"chan": chan, "data": data}, ensure_ascii=False) + "\n\n"
         dead = []
         with self._lock:
             for q in self._clients:
                 try:
-                    q.put_nowait(data)
+                    q.put_nowait(payload)
                 except queue.Full:
                     dead.append(q)
             for q in dead:
                 self._clients.remove(q)
 
-    def _poller(self):
-        """Thread de fond : poll CloudWatch toutes les 3 s et broadcast les nouveaux events."""
-        while True:
-            try:
-                logs = boto3.client("logs", region_name=AWS_REGION)
-                kwargs = dict(
-                    logGroupName=LOG_GROUP,
-                    limit=20,
-                    startFromHead=False,
+    # ── collectors ────────────────────────────────────────
+    def _collect_logs(self):
+        try:
+            logs   = boto3.client("logs", region_name=AWS_REGION)
+            kwargs = dict(logGroupName=LOG_GROUP, limit=30, startFromHead=False)
+            if self._last_log_ts:
+                kwargs["startTime"] = self._last_log_ts + 1
+            else:
+                kwargs["startTime"] = int(
+                    (datetime.now(timezone.utc) - timedelta(minutes=5)).timestamp() * 1000
                 )
-                if self._last_ingestion_time:
-                    kwargs["startTime"] = self._last_ingestion_time + 1
+            resp   = logs.filter_log_events(**kwargs)
+            events = sorted(resp.get("events", []), key=lambda e: e["timestamp"])
+            for e in events:
+                msg = e.get("message", "").strip()
+                if "ERROR" in msg or "error" in msg or "Exception" in msg:
+                    level = "ERROR"
+                elif "WARN" in msg or "warn" in msg or "WARNING" in msg or "[ATTACK" in msg:
+                    level = "WARN"
                 else:
-                    # Premier appel : 5 dernières minutes
-                    kwargs["startTime"] = int(
-                        (datetime.now(timezone.utc) - timedelta(minutes=5)).timestamp() * 1000
-                    )
+                    level = "INFO"
+                ts = datetime.fromtimestamp(
+                    e["timestamp"] / 1000, tz=timezone.utc
+                ).strftime("%H:%M:%S")
+                self._push("log", {
+                    "time": ts, "level": level,
+                    "msg": msg[:300], "id": e["eventId"]
+                })
+                self._last_log_ts = max(self._last_log_ts, e["timestamp"])
+        except Exception:
+            pass
 
-                resp = logs.filter_log_events(**kwargs)
-                events = sorted(resp.get("events", []), key=lambda e: e["timestamp"])
+    def _collect_metrics(self):
+        try:
+            cw      = boto3.client("cloudwatch", region_name=AWS_REGION)
+            now_utc = datetime.now(timezone.utc)
+            one_h   = now_utc - timedelta(hours=1)
 
-                for e in events:
-                    msg = e.get("message", "").strip()
-                    if "ERROR" in msg or "error" in msg or "Exception" in msg:
-                        level = "ERROR"
-                    elif "WARN" in msg or "warn" in msg or "WARNING" in msg or "[ATTACK" in msg:
-                        level = "WARN"
-                    else:
-                        level = "INFO"
+            def _stat(namespace, metric, dims, stat="Average"):
+                r = cw.get_metric_statistics(
+                    Namespace=namespace, MetricName=metric,
+                    Dimensions=dims,
+                    StartTime=one_h, EndTime=now_utc,
+                    Period=300, Statistics=[stat],
+                )
+                pts = r.get("Datapoints", [])
+                if not pts: return 0.0
+                return round(sorted(pts, key=lambda x: x["Timestamp"])[-1][stat], 1)
 
-                    ts = datetime.fromtimestamp(
-                        e["timestamp"] / 1000, tz=timezone.utc
-                    ).strftime("%H:%M:%S")
+            ecs_dims = [
+                {"Name": "ClusterName", "Value": ECS_CLUSTER},
+                {"Name": "ServiceName", "Value": ECS_SERVICE},
+            ]
+            log_dims = [{"Name": "LogGroup", "Value": LOG_GROUP}]
 
-                    self._broadcast({
-                        "time": ts,
-                        "level": level,
-                        "msg": msg[:300],
-                        "id": e["eventId"],
+            cpu    = _stat("AWS/ECS", "CPUUtilization",          ecs_dims)
+            mem    = _stat("AWS/ECS", "MemoryUtilization",       ecs_dims)
+            errors = _stat("SOC/Security", "ErrorCount",         log_dims, "Sum")
+            unauth = _stat("SOC/Security", "UnauthorizedAccessCount", log_dims, "Sum")
+
+            self._push("metrics", {
+                "cpu": cpu, "mem": mem,
+                "errors": int(errors), "unauth": int(unauth),
+                "ts": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+            })
+        except Exception:
+            pass
+
+    def _collect_alarms(self):
+        try:
+            cw   = boto3.client("cloudwatch", region_name=AWS_REGION)
+            resp = cw.describe_alarms(AlarmNames=ALARM_NAMES)
+            alarms = [
+                {
+                    "name":   a["AlarmName"],
+                    "state":  a["StateValue"],
+                    "desc":   a.get("AlarmDescription", ""),
+                    "reason": a.get("StateReason", ""),
+                }
+                for a in resp.get("MetricAlarms", [])
+            ]
+            self._push("alarms", {
+                "alarms": alarms,
+                "ts": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+            })
+        except Exception:
+            pass
+
+    def _collect_attacks(self):
+        try:
+            brute_list = []
+            for ip, data in _brute_force_tracker.items():
+                if data["count"] >= BRUTE_FORCE_THRESHOLD:
+                    brute_list.append({
+                        "type": "Brute Force", "ip": ip,
+                        "count": data["count"],
+                        "first_seen": datetime.fromtimestamp(
+                            data["first_seen"], tz=timezone.utc
+                        ).strftime("%H:%M:%S") if data["first_seen"] else "--",
+                        "last_seen": datetime.fromtimestamp(
+                            data["last_seen"], tz=timezone.utc
+                        ).strftime("%H:%M:%S") if data["last_seen"] else "--",
+                        "severity": "CRITICAL",
                     })
-                    self._last_ingestion_time = max(self._last_ingestion_time, e["timestamp"])
+            summary = {}
+            for entry in _attack_tracker:
+                t = entry["type"]
+                if t not in summary:
+                    summary[t] = {
+                        "type": t, "count": 0,
+                        "severity": entry["severity"],
+                        "confidence": entry["confidence"],
+                        "last_ip": entry["ip"], "last_time": entry["time"],
+                    }
+                summary[t]["count"]    += 1
+                summary[t]["last_ip"]   = entry["ip"]
+                summary[t]["last_time"] = entry["time"]
 
-            except Exception:
-                pass  # Silencieux — ne pas crasher le thread
+            self._push("attacks", {
+                "brute_force": brute_list,
+                "all_attacks": list(_attack_tracker[-20:]),
+                "summary":     list(summary.values()),
+                "ts": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+            })
+        except Exception:
+            pass
 
-            time.sleep(3)
+    # ── main loop ─────────────────────────────────────────
+    def _run(self):
+        t_metrics = 0
+        t_alarms  = 0
+        t_attacks = 0
+        t_ping    = 0
+
+        while True:
+            now = time.time()
+
+            # Logs toutes les LOG_INTERVAL s
+            self._collect_logs()
+
+            # Métriques
+            if now - t_metrics >= self.METRICS_INTERVAL:
+                self._collect_metrics()
+                t_metrics = now
+
+            # Alarmes
+            if now - t_alarms >= self.ALARMS_INTERVAL:
+                self._collect_alarms()
+                t_alarms = now
+
+            # Attaques
+            if now - t_attacks >= self.ATTACKS_INTERVAL:
+                self._collect_attacks()
+                t_attacks = now
+
+            # Ping keepalive
+            if now - t_ping >= self.PING_INTERVAL:
+                self._push("ping", None)
+                t_ping = now
+
+            time.sleep(self.LOG_INTERVAL)
 
     def start(self):
         if not self._started:
             self._started = True
-            t = threading.Thread(target=self._poller, daemon=True)
+            t = threading.Thread(target=self._run, daemon=True)
             t.start()
 
 
-_log_broker = LogBroker()
+_broker = RealtimeBroker()
 
 
-@app.route("/api/soc/logs/stream")
+@app.route("/api/soc/stream")
 @login_required
-def soc_logs_stream():
-    """Endpoint SSE : pousse les nouveaux logs CloudWatch en temps réel."""
-    _log_broker.start()
-    q = _log_broker.subscribe()
+def soc_stream():
+    """SSE endpoint — diffuse TOUS les canaux en temps réel."""
+    _broker.start()
+    q = _broker.subscribe()
 
     def generate():
-        # Ping initial pour ouvrir la connexion
-        yield "data: \"__ping__\"\n\n"
+        yield "data: " + json.dumps({"chan": "ping", "data": None}) + "\n\n"
         try:
             while True:
                 try:
-                    data = q.get(timeout=20)
-                    yield data
+                    yield q.get(timeout=25)
                 except queue.Empty:
-                    # Heartbeat pour garder la connexion ouverte
-                    yield "data: \"__ping__\"\n\n"
+                    yield "data: " + json.dumps({"chan": "ping", "data": None}) + "\n\n"
         except GeneratorExit:
             pass
         finally:
-            _log_broker.unsubscribe(q)
+            _broker.unsubscribe(q)
 
     return Response(
         stream_with_context(generate()),
         mimetype="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control":     "no-cache",
             "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
+            "Connection":        "keep-alive",
         },
     )
 
