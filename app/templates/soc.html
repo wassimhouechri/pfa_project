@@ -1253,16 +1253,18 @@ let logEntries    = [];
 let chartData     = [];
 let chartLabels   = [];
 
-// Intervalles de polling
-const POLL_LOGS    = 10000;   // 10s
-const POLL_METRICS = 30000;   // 30s
-const POLL_ALARMS  = 30000;   // 30s
+// Intervalles de polling (métriques / alarmes)
+const POLL_METRICS = 15000;   // 15s
+const POLL_ALARMS  = 15000;   // 15s
 
-let logsTimer    = null;
 let metricsTimer = null;
 let alarmsTimer  = null;
 let countdownTimer = null;
 let nextRefreshAt  = 0;
+
+// SSE — logs temps réel
+let _sseSource   = null;
+let _sseSeenIds  = new Set();
 
 // ─── Utilitaire fetch avec gestion session ─────────────────
 async function apiFetch(url, options = {}) {
@@ -1302,9 +1304,75 @@ function setStatus(ok, text) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// FETCH LOGS  →  GET /api/soc/logs
+// LOGS SSE — connexion temps réel
 // ═══════════════════════════════════════════════════════════
+function connectSSE() {
+  if (_sseSource) { _sseSource.close(); _sseSource = null; }
+
+  setDot('pollDotLogs', 'active');
+  const es = new EventSource('/api/soc/logs/stream', { withCredentials: true });
+  _sseSource = es;
+
+  es.onopen = () => {
+    setDot('pollDotLogs', 'ok');
+    appendSystemLog('🟢 SSE connecté — logs temps réel actifs', 'INFO');
+  };
+
+  es.onmessage = (ev) => {
+    let payload;
+    try { payload = JSON.parse(ev.data); } catch(e) { return; }
+    if (payload === '__ping__') return;   // heartbeat
+
+    // Déduplication
+    if (_sseSeenIds.has(payload.id)) return;
+    _sseSeenIds.add(payload.id);
+    if (_sseSeenIds.size > 500) {
+      const arr = [..._sseSeenIds];
+      _sseSeenIds = new Set(arr.slice(arr.length - 300));
+    }
+
+    // Ajouter dans le tableau interne et render
+    logEntries.push(payload);
+    if (logEntries.length > 200) logEntries = logEntries.slice(-200);
+
+    // KPI live
+    if (payload.level === 'ERROR') {
+      const cur = parseInt(document.getElementById('kpiErrorsVal').textContent) || 0;
+      setKpi('kpiErrors','kpiErrorsVal','kpiErrorsSub', cur+1, 'Depuis connexion', cur+1 > 0);
+    }
+    if (/401|403|unauthorized|forbidden/i.test(payload.msg)) {
+      const cur = parseInt(document.getElementById('kpiUnauthVal').textContent) || 0;
+      setKpi('kpiUnauth','kpiUnauthVal','kpiUnauthSub', cur+1, '401+403 détectés', cur+1 > 5);
+    }
+    if (/\b(200|201|204|GET|POST|PUT|DELETE)\b/.test(payload.msg)) {
+      const cur = parseInt(document.getElementById('kpiRequestsVal').textContent) || 0;
+      setKpi('kpiRequests','kpiRequestsVal','kpiRequestsSub', cur+1, 'Requêtes totales', false);
+    }
+
+    // Attaque ?
+    if (/401|403/g.test(payload.msg)) {
+      const unauthCount = parseInt(document.getElementById('kpiUnauthVal').textContent) || 0;
+      if (unauthCount > 10) triggerAttackDetection(`${unauthCount} accès refusés — possible force brute !`);
+    }
+
+    renderLogs();
+    document.getElementById('logsTs').textContent = new Date().toLocaleTimeString('fr-FR');
+    setDot('pollDotLogs', 'ok');
+  };
+
+  es.onerror = () => {
+    setDot('pollDotLogs', 'error');
+    es.close();
+    _sseSource = null;
+    appendSystemLog('⚠️ SSE déconnecté — reconnexion dans 5s…', 'WARN');
+    setTimeout(connectSSE, 5000);
+  };
+}
+
+// Garde fetchLogs pour le bouton RELOAD manuel
 async function fetchLogs() {
+  connectSSE();
+}
   setDot('pollDotLogs', 'active');
   try {
     const res  = await apiFetch('/api/soc/logs');
@@ -1663,7 +1731,8 @@ async function refreshAll() {
   document.getElementById('pollStatus').textContent = 'Rafraîchissement...';
 
   try {
-    await Promise.all([fetchLogs(), fetchMetrics(), fetchAlarms(), fetchAttackStats()]);
+    await Promise.all([fetchMetrics(), fetchAlarms(), fetchAttackStats()]);
+    connectSSE(); // reconnecter SSE si besoin
     const ts = new Date().toLocaleTimeString('fr-FR');
     document.getElementById('footerRefresh').textContent = `Dernière mise à jour: ${ts}`;
     document.getElementById('pollStatus').textContent = 'Données à jour ✓';
@@ -1683,26 +1752,26 @@ async function refreshAll() {
 // POLLING AUTOMATIQUE
 // ═══════════════════════════════════════════════════════════
 function startPolling() {
-  // Logs : toutes les 10s
-  logsTimer = setInterval(fetchLogs, POLL_LOGS);
+  // Logs : SSE temps réel (pas de setInterval)
+  connectSSE();
 
-  // Métriques : toutes les 30s
+  // Métriques : toutes les 15s
   metricsTimer = setInterval(fetchMetrics, POLL_METRICS);
 
-  // Alarmes : toutes les 30s
+  // Alarmes : toutes les 15s
   alarmsTimer = setInterval(fetchAlarms, POLL_ALARMS);
 
-  // Attack stats Flask : toutes les 10s (même fréquence que les logs)
-  setInterval(fetchAttackStats, POLL_LOGS);
+  // Attack stats Flask : toutes les 10s
+  setInterval(fetchAttackStats, 10000);
 
-  // Countdown visuel basé sur le cycle le plus court (logs 10s)
-  nextRefreshAt = Date.now() + POLL_LOGS;
+  // Countdown visuel pour métriques (15s)
+  nextRefreshAt = Date.now() + POLL_METRICS;
   countdownTimer = setInterval(() => {
     const remaining = Math.max(0, Math.ceil((nextRefreshAt - Date.now()) / 1000));
-    document.getElementById('nextRefreshLabel').textContent = `Prochain refresh: ${remaining}s`;
-    const pct = 100 - (remaining / (POLL_LOGS / 1000)) * 100;
+    document.getElementById('nextRefreshLabel').textContent = `Métriques dans: ${remaining}s`;
+    const pct = 100 - (remaining / (POLL_METRICS / 1000)) * 100;
     document.getElementById('pollProgressFill').style.width = pct + '%';
-    if (remaining === 0) nextRefreshAt = Date.now() + POLL_LOGS;
+    if (remaining === 0) nextRefreshAt = Date.now() + POLL_METRICS;
   }, 500);
 }
 
