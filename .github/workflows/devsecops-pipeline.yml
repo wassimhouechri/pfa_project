@@ -205,16 +205,6 @@ jobs:
         if: always()
         run: docker stop test-app || true && docker rm test-app || true
 
-# ============================================================
-# JOB 4 — Deploy ECS Fargate
-#
-# FIX IP ANCIENNE :
-#   ✅ On stocke le task_def_arn enregistré à l'étape 2
-#   ✅ Dans get-task, on vérifie que taskDefinitionArn de la
-#      task RUNNING correspond bien à la NOUVELLE task definition
-#   ✅ Boucle 20×15s (5 min) au lieu d'un sleep 60 fixe
-#   ✅ Résultat : IP retournée = forcément la nouvelle task
-# ============================================================
   deploy-ecs:
     name: "Deploy — ECS Fargate"
     runs-on: ubuntu-latest
